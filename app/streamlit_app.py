@@ -2120,5 +2120,4 @@ def main() -> None:
         page_settings(cfg, ds, hw, clf_ready)
 
 
-if __name__ == "__main__":
-    main()
+main()
