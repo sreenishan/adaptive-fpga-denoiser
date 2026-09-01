@@ -2120,4 +2120,9 @@ def main() -> None:
         page_settings(cfg, ds, hw, clf_ready)
 
 
-main()
+import traceback as _tb
+try:
+    main()
+except Exception as _e:
+    st.error(f"**Startup error:** {_e}")
+    st.code(_tb.format_exc())
