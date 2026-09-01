@@ -1,1 +1,0 @@
-# No system packages needed — opencv-python-headless ships its own libs.
