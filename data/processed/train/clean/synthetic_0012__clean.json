@@ -1,0 +1,9 @@
+{
+  "class": "clean",
+  "label": 0,
+  "noise_parameters": {},
+  "seed": 151787339,
+  "source": "synthetic",
+  "source_id": "synthetic_0012",
+  "split": "train"
+}

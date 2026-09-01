@@ -1,0 +1,28 @@
+# Board-independent RTL parameters, simulation, and synthesis targets.
+# Everything under `synthesis` is null until a real tool run produces it.
+# Never fill these in by hand.
+
+stream:
+  pixel_width: 8          # 8-bit grayscale, 0-255 (spec section 20)
+  image_width: 224
+  image_height: 224
+  boundary_policy: replicate
+  backpressure: false     # valid-only internal stream first; ready/valid later
+
+simulation:
+  simulator: iverilog     # verilator | iverilog
+  input_dir: simulation/input
+  expected_dir: simulation/expected
+  output_dir: simulation/output
+  # Tolerance used when comparing RTL output against the Python reference.
+  # 0 = bit-exact, required for median and the fixed-point Gaussian.
+  max_abs_error:
+    median: 0
+    gaussian: 0
+    wiener: 1
+
+synthesis:
+  vendor: null            # xilinx | intel
+  device: null
+  clock_mhz: null
+  tool_version: null

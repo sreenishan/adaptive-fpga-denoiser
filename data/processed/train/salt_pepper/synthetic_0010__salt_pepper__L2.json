@@ -1,0 +1,12 @@
+{
+  "class": "salt_pepper",
+  "label": 1,
+  "noise_parameters": {
+    "amount": 0.1,
+    "salt_vs_pepper": 0.5
+  },
+  "seed": 1014065557,
+  "source": "synthetic",
+  "source_id": "synthetic_0010",
+  "split": "train"
+}

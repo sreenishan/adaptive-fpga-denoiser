@@ -1,0 +1,12 @@
+{
+  "class": "gaussian",
+  "label": 2,
+  "noise_parameters": {
+    "mean": 0.0,
+    "sigma": 0.1
+  },
+  "seed": 864001772,
+  "source": "synthetic",
+  "source_id": "synthetic_0017",
+  "split": "val"
+}

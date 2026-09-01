@@ -1,0 +1,20 @@
+# Core runtime dependencies (see pyproject.toml for the authoritative list).
+numpy>=1.24
+opencv-python>=4.8
+scipy>=1.10
+scikit-image>=0.21
+scikit-learn>=1.3
+pandas>=2.0
+matplotlib>=3.7
+pyyaml>=6.0
+
+# Demonstration UI (spec section 39): streamlit run app/streamlit_app.py
+streamlit>=1.30
+
+# Testing.
+pytest>=7.4
+
+# Machine-learning framework. Not yet installed in this environment; needed
+# from phase 6 (the CNN classifier) onward, not before. On a CUDA machine
+# install the matching wheel from https://pytorch.org instead of this line.
+torch>=2.2

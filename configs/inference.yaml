@@ -1,0 +1,36 @@
+# Inference, filter parameters and quality evaluation.
+
+model_path: models/checkpoints/best_model.pt
+device: auto
+
+image:
+  width: 224
+  height: 224
+  grayscale: true
+
+# A low-confidence prediction is never hidden; it is reported and routed to the
+# fallback below.
+confidence:
+  threshold: 0.60
+  fallback: bypass        # bypass | median | gaussian | wiener
+
+filters:
+  boundary_mode: replicate  # must match the RTL boundary policy for verification
+  median:
+    kernel_size: 3
+  gaussian:
+    kernel_size: 3
+    # The fixed integer kernel [1 2 1; 2 4 2; 1 2 1]/16 that the RTL
+    # implements. It is exact and bit-comparable; sigma below is NOT used
+    # while this is true, because that kernel corresponds to sigma ~0.85 and
+    # pretending otherwise would put a number in the report that the filter
+    # never read.
+    integer_kernel: true
+    sigma: 1.0
+  wiener:
+    kernel_size: 3
+    noise_variance: null    # null = estimate from the local statistics
+
+evaluation:
+  max_pixel_value: 255
+  results_dir: results
