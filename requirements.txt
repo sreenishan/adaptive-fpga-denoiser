@@ -14,7 +14,7 @@ streamlit>=1.30
 # Testing.
 pytest>=7.4
 
-# Machine-learning framework. Not yet installed in this environment; needed
-# from phase 6 (the CNN classifier) onward, not before. On a CUDA machine
-# install the matching wheel from https://pytorch.org instead of this line.
-torch>=2.2
+# Machine-learning framework: install locally with the CUDA wheel from
+# https://pytorch.org. Not listed here because PyTorch (~2 GB) exceeds
+# Streamlit Community Cloud's install budget. The app gracefully degrades
+# when torch is absent.
