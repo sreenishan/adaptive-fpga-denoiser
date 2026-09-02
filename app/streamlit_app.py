@@ -76,29 +76,29 @@ st.set_page_config(
 # ═══════════════════════════════════════════════════════════════════════════
 
 T = {
-    # surfaces
-    "bg":        "#08080F",
-    "surface":   "#0F0F1A",
-    "elevated":  "#161622",
-    "hover":     "#1C1C2A",
-    # borders
-    "border":    "rgba(120,120,200,0.13)",
-    "border_st": "rgba(140,140,220,0.22)",
-    # text
-    "text":      "#EEEEF8",
-    "text_2":    "#8888AA",
-    "text_3":    "#606080",
-    # accent — teal/cyan for FPGA/tech aesthetic
-    "accent":    "#00C9A7",
-    "accent_hi": "#33DEC0",
+    # surfaces — deep navy-slate (more premium than pure black)
+    "bg":         "#070B14",
+    "surface":    "#0D1117",
+    "elevated":   "#161C2B",
+    "hover":      "#1C2434",
+    # borders — blue-tinted for a cooler, more tech feel
+    "border":     "rgba(99,130,170,0.14)",
+    "border_st":  "rgba(99,130,170,0.27)",
+    # text — slightly cool whites (softer on dark backgrounds)
+    "text":       "#E6EDF3",
+    "text_2":     "#8B949E",
+    "text_3":     "#484F58",
+    # accent — teal
+    "accent":     "#00C9A7",
+    "accent_hi":  "#2ED9B8",
     "accent_dim": "rgba(0,201,167,0.12)",
     # semantic
-    "ok":        "#22C55E",
-    "warn":      "#F59E0B",
-    "err":       "#EF4444",
-    "info":      "#3B82F6",
-    "violet":    "#A78BFA",
-    "cyan":      "#06B6D4",
+    "ok":         "#3FB950",
+    "warn":       "#D29922",
+    "err":        "#F85149",
+    "info":       "#58A6FF",
+    "violet":     "#BC8CFF",
+    "cyan":       "#39D5E8",
 }
 
 # Noise class → (accent, label)
@@ -146,25 +146,28 @@ CSS = f"""
   --border:{T['border']}; --border-st:{T['border_st']};
   --text:{T['text']}; --text-2:{T['text_2']}; --text-3:{T['text_3']};
   --accent:{T['accent']}; --accent-hi:{T['accent_hi']}; --accent-dim:{T['accent_dim']};
-  --ok:{T['ok']}; --warn:{T['warn']}; --err:{T['err']};
+  --ok:{T['ok']}; --warn:{T['warn']}; --err:{T['err']}; --info:{T['info']};
   --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s8:32px; --s10:40px; --s12:48px;
-  --r-sm:8px; --r-md:10px; --r-lg:14px; --r-xl:18px;
-  --glow: 0 0 20px rgba(0,201,167,0.15); --glow-sm: 0 0 10px rgba(0,201,167,0.10);
+  --r-sm:8px; --r-md:11px; --r-lg:15px; --r-xl:20px;
+  --glow: 0 0 28px rgba(0,201,167,0.20); --glow-sm: 0 0 14px rgba(0,201,167,0.13);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.55), 0 2px 4px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6), 0 4px 12px rgba(0,0,0,0.4);
   --ease:cubic-bezier(0.32,0.72,0,1);
   --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
   --mono:'SF Mono',ui-monospace,'JetBrains Mono','Cascadia Code',Consolas,monospace;
 }}
 
 /* ── base ── */
-html, body, [class*="css"], .stApp {{ font-family: var(--font); }}
+html, body, [class*="css"], .stApp {{ font-family: var(--font); -webkit-font-smoothing: antialiased; }}
 .stApp {{ background: var(--bg); color: var(--text); }}
 [data-testid="stMain"] .block-container,
-.main .block-container {{ padding: var(--s6) var(--s8) var(--s12); max-width: 1440px; }}
+.main .block-container {{ padding: var(--s8) var(--s10) var(--s12); max-width: 1480px; }}
 [data-testid="stHeader"] {{ background: transparent !important; }}
 #MainMenu, footer {{ visibility: hidden; }}
 
-h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
-[data-testid="stMain"] p {{ color: var(--text-2); font-size: 14px; line-height: 1.6; }}
+h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }}
+[data-testid="stMain"] p {{ color: var(--text-2); font-size: 14px; line-height: 1.65; }}
 .tnum {{ font-variant-numeric: tabular-nums; font-feature-settings:'tnum' 1; }}
 
 /* ── focus: visible everywhere, keyboard-first ── */
@@ -176,12 +179,12 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
 /* ══ SIDEBAR ══ */
 [data-testid="stSidebar"],
 [data-testid="stSidebar"] > div,
-[data-testid="stSidebarContent"] {{ background: linear-gradient(180deg,#0B0B14 0%,#070710 100%) !important; }}
+[data-testid="stSidebarContent"] {{ background: linear-gradient(180deg,#0A0E18 0%,#070B14 100%) !important; }}
 /* Streamlit renders the sidebar as a resizable section carrying an INLINE
    width (300px default). Only `width` with !important overrides an inline
    declaration — min/max-width alone are silently outranked. */
 [data-testid="stSidebar"] {{
-  border-right: 1px solid rgba(0,201,167,0.13) !important;
+  border-right: 1px solid rgba(99,130,170,0.15) !important;
   width: 256px !important; min-width: 256px !important; max-width: 256px !important;
   flex: 0 0 256px !important;
 }}
@@ -230,16 +233,16 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
 [data-testid="stSidebar"] .nav-idle svg {{ opacity:.65; }}
 [data-testid="stSidebar"] .nav-active {{
   position:relative;
-  background: linear-gradient(96deg,rgba(0,201,167,.16),rgba(0,201,167,.06));
-  border-color: rgba(0,201,167,.28);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.04),0 0 12px rgba(0,201,167,.08);
+  background: linear-gradient(96deg,rgba(0,201,167,.18),rgba(0,201,167,.07));
+  border-color: rgba(0,201,167,.32);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 0 16px rgba(0,201,167,.10), var(--shadow-sm);
 }}
-[data-testid="stSidebar"] .nav-active .nav-label {{ color:#DDFAF4; font-weight:600; }}
-[data-testid="stSidebar"] .nav-active svg {{ color: var(--accent-hi); filter:drop-shadow(0 0 4px rgba(0,201,167,.4)); }}
+[data-testid="stSidebar"] .nav-active .nav-label {{ color:#E0FBF5; font-weight:650; }}
+[data-testid="stSidebar"] .nav-active svg {{ color: var(--accent-hi); filter:drop-shadow(0 0 5px rgba(0,201,167,.45)); }}
 [data-testid="stSidebar"] .nav-active::before {{
-  content:""; position:absolute; left:-7px; top:10px; bottom:10px; width:2.5px;
-  border-radius:3px; background: linear-gradient(180deg,#00DEB9,#00927A);
-  box-shadow: 0 0 6px rgba(0,201,167,.6);
+  content:""; position:absolute; left:-7px; top:9px; bottom:9px; width:3px;
+  border-radius:4px; background: linear-gradient(180deg,#2AEBB8,#00927A);
+  box-shadow: 0 0 8px rgba(0,201,167,.7);
 }}
 
 /* transparent hit target laid exactly over each row */
@@ -255,8 +258,8 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
 [data-testid="stSidebar"] .stButton > button p {{ color:transparent !important; font-size:0 !important; }}
 
 [data-testid="stSidebar"] .nav-group {{
-  font-size:10px; font-weight:700; letter-spacing:.16em; text-transform:uppercase;
-  color:rgba(0,201,167,.4); padding:0 var(--s5); margin:20px 0 6px;
+  font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+  color:rgba(99,130,170,.55); padding:0 var(--s5); margin:20px 0 6px;
 }}
 [data-testid="stSidebar"] .nav-group-first {{ margin-top:var(--s1); }}
 
@@ -270,20 +273,20 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
 /* primary */
 [data-testid="stMain"] .stButton > button[kind="primary"],
 [data-testid="stMain"] .stDownloadButton > button {{
-  background: linear-gradient(135deg,#00C9A7,#00A88C) !important; color:#000 !important;
-  border:1px solid rgba(0,201,167,.3) !important;
-  box-shadow: 0 1px 3px rgba(0,0,0,.4),0 0 12px rgba(0,201,167,.2) !important;
-  font-weight:600 !important;
+  background: linear-gradient(135deg,#00DEB9 0%,#00A88C 100%) !important; color:#020F0B !important;
+  border:1px solid rgba(0,201,167,.35) !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,.4), 0 0 16px rgba(0,201,167,.22) !important;
+  font-weight:700 !important; letter-spacing:-.005em !important;
 }}
 [data-testid="stMain"] .stButton > button[kind="primary"]:hover,
 [data-testid="stMain"] .stDownloadButton > button:hover {{
-  background: linear-gradient(135deg,#00DEB9,#00C9A7) !important;
-  box-shadow: 0 2px 16px rgba(0,201,167,.4) !important;
+  background: linear-gradient(135deg,#2AEBB8 0%,#00C9A7 100%) !important;
+  box-shadow: 0 4px 18px rgba(0,201,167,.45) !important;
   transform: translateY(-1px) !important;
 }}
 [data-testid="stMain"] .stButton > button[kind="primary"]:active {{
-  background: linear-gradient(135deg,#00A88C,#008F76) !important;
-  transform: translateY(0) !important;
+  background: linear-gradient(135deg,#00A88C,#008B75) !important;
+  transform: translateY(0) !important; box-shadow: none !important;
 }}
 /* secondary */
 [data-testid="stMain"] .stButton > button[kind="secondary"] {{
@@ -373,65 +376,84 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
 
 /* ══ SHARED COMPONENT CLASSES ══ */
 .card {{
-  background: linear-gradient(145deg,rgba(15,15,26,.98),rgba(8,8,15,.98));
-  border:1px solid var(--border); border-radius: var(--r-lg);
-  padding: var(--s5); transition: border-color 200ms var(--ease),box-shadow 200ms var(--ease);
-  backdrop-filter: blur(8px);
+  background: linear-gradient(160deg, var(--elevated) 0%, rgba(13,17,23,.97) 100%);
+  border:1px solid var(--border); border-radius: var(--r-xl);
+  padding: var(--s6); transition: border-color 220ms var(--ease),box-shadow 220ms var(--ease);
+  box-shadow: var(--shadow-sm);
+  position:relative; overflow:hidden;
 }}
-.card-i {{ transition: border-color 200ms var(--ease),box-shadow 200ms var(--ease); cursor:pointer; }}
+.card::after {{
+  content:""; position:absolute; top:0; left:0; right:0; height:1px;
+  background: linear-gradient(90deg,transparent,rgba(255,255,255,.05),transparent);
+  pointer-events:none;
+}}
+.card-i {{ transition: border-color 200ms var(--ease),box-shadow 200ms var(--ease),transform 180ms var(--ease); cursor:pointer; }}
 .card-i:hover {{
-  border-color: rgba(0,201,167,.22);
-  box-shadow: 0 4px 24px rgba(0,0,0,.3),0 0 16px rgba(0,201,167,.06);
+  border-color: rgba(0,201,167,.28);
+  box-shadow: var(--shadow-md), 0 0 24px rgba(0,201,167,.08);
+  transform: translateY(-2px);
 }}
 
 .kpi {{
   position:relative; overflow:hidden;
-  background: linear-gradient(145deg,rgba(15,15,26,.98),rgba(8,8,15,.98));
-  border:1px solid var(--border); border-radius: var(--r-lg);
+  background: linear-gradient(155deg, var(--elevated) 0%, rgba(13,17,23,.95) 100%);
+  border:1px solid var(--border); border-radius: var(--r-xl);
   padding: var(--s5) var(--s5) var(--s4);
-  transition: border-color 200ms var(--ease),box-shadow 200ms var(--ease),transform 200ms var(--ease);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 220ms var(--ease),box-shadow 220ms var(--ease),transform 180ms var(--ease);
 }}
 .kpi::before {{
   content:""; position:absolute; top:0; left:0; right:0; height:2px;
-  background: linear-gradient(90deg,transparent,currentColor,transparent); opacity:.5;
+  background: currentColor; opacity:.35; border-radius: var(--r-xl) var(--r-xl) 0 0;
+}}
+.kpi::after {{
+  content:""; position:absolute; top:2px; left:0; right:0; height:1px;
+  background: linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent);
 }}
 .kpi:hover {{
   border-color: var(--border-st);
-  box-shadow: 0 6px 28px rgba(0,0,0,.35),0 0 10px rgba(0,201,167,.1);
-  transform: translateY(-1px);
+  box-shadow: var(--shadow-md), 0 0 18px rgba(0,0,0,.1);
+  transform: translateY(-2px);
 }}
-.kpi-h {{ display:flex; align-items:center; gap:8px; margin-bottom:14px; }}
+.kpi-h {{ display:flex; align-items:center; gap:10px; margin-bottom:16px; }}
 .kpi-icon {{
-  width:32px; height:32px; border-radius:8px; display:flex; align-items:center;
+  width:36px; height:36px; border-radius:11px; display:flex; align-items:center;
   justify-content:center; flex-shrink:0;
+  box-shadow: 0 2px 8px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
 }}
-.kpi-icon svg {{ width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }}
-.kpi-l {{ font-size:11px; font-weight:700; color: var(--text-3); letter-spacing:.08em; text-transform:uppercase; }}
-.kpi-v {{ font-size:28px; font-weight:700; color: var(--text); letter-spacing:-0.036em; line-height:1.05;
+.kpi-icon svg {{ width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }}
+.kpi-l {{ font-size:10px; font-weight:700; color: var(--text-3); letter-spacing:.12em; text-transform:uppercase; }}
+.kpi-v {{ font-size:30px; font-weight:800; color: var(--text); letter-spacing:-0.04em; line-height:1.0;
          font-variant-numeric: tabular-nums; }}
-.kpi-s {{ font-size:12px; color: var(--text-3); margin-top:6px; line-height:1.5; }}
+.kpi-s {{ font-size:11.5px; color: var(--text-3); margin-top:9px; line-height:1.55; }}
 
 .badge {{
-  display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:100px;
-  font-size:12px; font-weight:550; line-height:1.45; white-space:nowrap;
+  display:inline-flex; align-items:center; gap:5px; padding:2.5px 9px; border-radius:100px;
+  font-size:11px; font-weight:650; line-height:1.5; white-space:nowrap;
+  letter-spacing:.015em;
 }}
 .dot {{ width:5px; height:5px; border-radius:50%; flex-shrink:0; }}
 
-.sec {{ display:flex; align-items:center; gap:var(--s3); margin: var(--s8) 0 var(--s4); }}
-.sec-t {{ font-size:11px; font-weight:800; color: var(--accent); letter-spacing:.14em; text-transform:uppercase; white-space:nowrap; }}
-.sec-r {{ flex:1; height:1px; background: linear-gradient(90deg,rgba(0,201,167,.3),transparent); }}
+.sec {{ display:flex; align-items:center; gap:var(--s3); margin: var(--s8) 0 var(--s5); }}
+.sec-t {{
+  font-size:10px; font-weight:800; color: var(--accent); letter-spacing:.15em; text-transform:uppercase;
+  white-space:nowrap; padding:4px 11px; border-radius:6px;
+  background: rgba(0,201,167,.07); border:1px solid rgba(0,201,167,.18);
+  box-shadow: 0 0 12px rgba(0,201,167,.06);
+}}
+.sec-r {{ flex:1; height:1px; background: linear-gradient(90deg,rgba(0,201,167,.18),transparent); }}
 
 .tbl {{ width:100%; border-collapse:collapse; font-size:13px; }}
 .tbl th {{
-  text-align:left; padding:10px var(--s3); font-size:11px; font-weight:700; color: var(--accent);
-  text-transform:uppercase; letter-spacing:.09em; border-bottom:1px solid var(--border); white-space:nowrap;
-  background: rgba(0,201,167,.04);
+  text-align:left; padding:10px var(--s3); font-size:10px; font-weight:800; color: var(--text-3);
+  text-transform:uppercase; letter-spacing:.12em; border-bottom:1px solid var(--border); white-space:nowrap;
+  background: rgba(255,255,255,.02);
 }}
-.tbl td {{ padding:11px var(--s3); color: var(--text-2); border-bottom:1px solid rgba(148,163,184,.06); white-space:nowrap; }}
+.tbl td {{ padding:11px var(--s3); color: var(--text-2); border-bottom:1px solid rgba(99,130,170,.06); white-space:nowrap; vertical-align:middle; }}
 .tbl tr:last-child td {{ border-bottom:none; }}
-.tbl tbody tr {{ transition: background 140ms var(--ease); }}
-.tbl tbody tr:hover {{ background: rgba(0,201,167,.04); }}
-.tbl-w {{ overflow-x:auto; border:1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }}
+.tbl tbody tr {{ transition: background 130ms var(--ease); }}
+.tbl tbody tr:hover {{ background: rgba(255,255,255,.025); }}
+.tbl-w {{ overflow-x:auto; border:1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-sm); }}
 
 .code {{
   background:rgba(4,4,10,.95); border:1px solid var(--border); border-radius: var(--r-md);
@@ -442,10 +464,11 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
 
 .empty {{
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  padding: var(--s12) var(--s6); border:1px dashed rgba(0,201,167,.18); border-radius: var(--r-xl);
-  background: rgba(0,201,167,.02); text-align:center; gap:var(--s2);
+  padding: var(--s12) var(--s6); border:1.5px dashed rgba(0,201,167,.16); border-radius: var(--r-xl);
+  background: radial-gradient(ellipse at 50% 0%, rgba(0,201,167,.04) 0%, transparent 70%);
+  text-align:center; gap:var(--s2);
 }}
-.empty svg {{ width:24px; height:24px; fill:none; stroke: var(--accent); opacity:.4; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }}
+.empty svg {{ width:28px; height:28px; fill:none; stroke: var(--accent); opacity:.35; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }}
 
 .skel {{ background: linear-gradient(90deg,rgba(0,201,167,.04) 25%,rgba(0,201,167,.09) 37%,rgba(0,201,167,.04) 63%);
         background-size:400% 100%; animation: shimmer 1.4s ease infinite; border-radius:var(--r-sm); }}
@@ -545,14 +568,15 @@ def page_head(title: str, sub: str, crumb: list[str] | None = None) -> str:
             + "".join(parts) + "</div>"
         )
     return (
-        f'<div class="rise" style="margin-bottom:28px;">{trail}'
-        f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">'
-        f'<div style="width:3px;height:32px;border-radius:3px;'
-        f'background:linear-gradient(180deg,{T["accent"]},{T["cyan"]});'
-        f'box-shadow:0 0 8px rgba(0,201,167,.5);flex-shrink:0;"></div>'
-        f'<h1 class="page-t" style="font-size:30px;font-weight:800;letter-spacing:-0.03em;'
+        f'<div class="rise" style="margin-bottom:34px;">{trail}'
+        f'<div style="display:flex;align-items:center;gap:16px;margin-bottom:9px;">'
+        f'<div style="width:4px;height:38px;border-radius:4px;flex-shrink:0;'
+        f'background:linear-gradient(180deg,#2AEBB8 0%,{T["accent"]} 55%,{T["cyan"]} 100%);'
+        f'box-shadow:0 0 14px rgba(0,201,167,.6);"></div>'
+        f'<h1 class="page-t" style="font-size:29px;font-weight:800;letter-spacing:-0.036em;'
         f'margin:0;line-height:1.15;color:{T["text"]};">{esc(title)}</h1></div>'
-        f'<p style="font-size:14px;color:{T["text_2"]};margin:0 0 0 15px;line-height:1.6;">{sub}</p></div>'
+        f'<p style="font-size:14px;color:{T["text_2"]};margin:0 0 0 20px;line-height:1.65;'
+        f'letter-spacing:-.005em;">{sub}</p></div>'
     )
 
 
@@ -595,20 +619,26 @@ def alert(title: str, body: str, kind: str = "info") -> str:
     }
     color, icon = cfg.get(kind, cfg["info"])
     return (
-        f'<div role="status" style="display:flex;gap:11px;padding:13px 15px;border-radius:{"10px"};'
-        f'background:{color}0F;border:1px solid {color}2E;margin:8px 0;">'
-        f'<div style="margin-top:1px;">{ico(icon,15,color,1.9)}</div><div style="min-width:0;">'
-        f'<div style="font-size:13.5px;font-weight:600;color:{color};margin-bottom:2px;">{esc(title)}</div>'
-        f'<div style="font-size:13px;color:{T["text_2"]};line-height:1.55;">{body}</div></div></div>'
+        f'<div role="status" style="display:flex;gap:12px;padding:12px 16px;border-radius:12px;'
+        f'background:{color}0D;border:1px solid {color}2A;border-left:3px solid {color};margin:10px 0;'
+        f'box-shadow:0 2px 8px rgba(0,0,0,.2);">'
+        f'<div style="margin-top:2px;flex-shrink:0;">{ico(icon,14,color,2.0)}</div><div style="min-width:0;">'
+        f'<div style="font-size:13px;font-weight:700;color:{color};margin-bottom:3px;letter-spacing:-.01em;">{esc(title)}</div>'
+        f'<div style="font-size:13px;color:{T["text_2"]};line-height:1.58;">{body}</div></div></div>'
     )
 
 
 def empty(icon: str, title: str, why: str, next_step: str) -> str:
     return (
-        f'<div class="empty rise">{ico(icon,22,T["text_3"],1.6)}'
-        f'<div style="font-size:15px;font-weight:600;color:{T["text"]};margin-top:4px;">{esc(title)}</div>'
-        f'<div style="font-size:13.5px;color:{T["text_2"]};max-width:440px;line-height:1.6;">{why}</div>'
-        f'<div style="font-size:13px;color:{T["text_3"]};max-width:440px;line-height:1.6;margin-top:2px;">{next_step}</div>'
+        f'<div class="empty rise" style="padding:40px 24px;">'
+        f'<div style="width:52px;height:52px;border-radius:50%;background:{T["elevated"]};'
+        f'border:1.5px solid {T["border_st"]};display:flex;align-items:center;justify-content:center;'
+        f'margin:0 auto 14px;">{ico(icon,24,T["text_3"],1.6)}</div>'
+        f'<div style="font-size:16px;font-weight:700;color:{T["text"]};margin-bottom:6px;">{esc(title)}</div>'
+        f'<div style="font-size:13.5px;color:{T["text_2"]};max-width:440px;line-height:1.65;margin:0 auto;">{why}</div>'
+        f'<div style="font-size:13px;color:{T["accent"]};max-width:440px;line-height:1.6;margin:10px auto 0;'
+        f'padding:8px 14px;background:{T["accent_dim"]};border-radius:8px;border:1px solid rgba(0,201,167,.2);">'
+        f'{next_step}</div>'
         f'</div>'
     )
 
@@ -634,10 +664,10 @@ def kv_rows(pairs: list[tuple[str, str]]) -> str:
     for k, v in pairs:
         out += (
             f'<div style="display:flex;justify-content:space-between;align-items:center;gap:16px;'
-            f'padding:9px 0;border-bottom:1px solid rgba(148,163,184,.06);">'
-            f'<span style="font-size:13px;color:{T["text_3"]};">{esc(k)}</span>'
+            f'padding:9px 0;border-bottom:1px solid rgba(99,130,170,.07);">'
+            f'<span style="font-size:12.5px;color:{T["text_3"]};font-weight:500;letter-spacing:.01em;">{esc(k)}</span>'
             f'<span style="font-size:13px;color:{T["text_2"]};font-variant-numeric:tabular-nums;'
-            f'text-align:right;">{v}</span></div>'
+            f'text-align:right;font-weight:500;">{v}</span></div>'
         )
     return f'<div>{out}</div>'
 
@@ -646,9 +676,11 @@ def meter(pct: float, color: str, height: int = 6) -> str:
     w = max(0.0, min(100.0, pct))
     return (
         f'<div role="progressbar" aria-valuenow="{w:.0f}" aria-valuemin="0" aria-valuemax="100" '
-        f'style="background:rgba(148,163,184,.13);border-radius:100px;height:{height}px;overflow:hidden;">'
-        f'<div style="width:{w}%;height:100%;background:{color};border-radius:100px;'
-        f'transition:width 260ms var(--ease);"></div></div>'
+        f'style="background:rgba(99,130,170,.11);border-radius:100px;height:{height}px;overflow:hidden;'
+        f'box-shadow:inset 0 1px 2px rgba(0,0,0,.3);">'
+        f'<div style="width:{w}%;height:100%;background:linear-gradient(90deg,{color}CC,{color});'
+        f'border-radius:100px;transition:width 280ms var(--ease);'
+        f'box-shadow:0 0 6px {color}60;"></div></div>'
     )
 
 
@@ -664,26 +696,34 @@ def chart_bars(values: list[float], labels: list[str], color: str, unit: str = "
     n, w, gap = len(values), 640, 8
     bw = (w - gap * (n - 1)) / n
     top = max(values) or 1.0
-    bars, lbls = "", ""
+    bars, lbls, vals = "", "", ""
     for i, v in enumerate(values):
-        bh = max(2.0, (v / top) * (h - 26))
-        x, y = i * (bw + gap), (h - 22) - bh
+        bh = max(2.0, (v / top) * (h - 36))
+        x, y = i * (bw + gap), (h - 24) - bh
         bars += (
-            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{bh:.1f}" rx="3" fill="{color}" opacity="0.85">'
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{bh:.1f}" rx="4" fill="{color}" opacity="0.82">'
             f'<title>{esc(labels[i])}: {v:.4g}{unit}</title></rect>'
         )
-        if n <= 12:
+        # value label above bar
+        if n <= 16 and v > 0:
+            vals += (
+                f'<text x="{x + bw/2:.1f}" y="{y - 4:.1f}" text-anchor="middle" '
+                f'font-size="10" fill="{color}" opacity=".9" font-weight="600" '
+                f'font-family="Inter,sans-serif">{v:.4g}</text>'
+            )
+        if n <= 14:
             lbls += (
                 f'<text x="{x + bw/2:.1f}" y="{h - 6}" text-anchor="middle" '
                 f'font-size="10.5" fill="{T["text_3"]}" font-family="Inter,sans-serif">{esc(labels[i][:9])}</text>'
             )
     grid = "".join(
-        f'<line x1="0" y1="{(h-22) * f:.1f}" x2="{w}" y2="{(h-22)*f:.1f}" stroke="{T["border"]}" stroke-width="1"/>'
+        f'<line x1="0" y1="{(h-24) * f:.1f}" x2="{w}" y2="{(h-24)*f:.1f}" '
+        f'stroke="{T["border"]}" stroke-width="1" stroke-dasharray="{"none" if f==1.0 else "4 3"}"/>'
         for f in (0.0, 0.5, 1.0)
     )
     return (
         f'<svg viewBox="0 0 {w} {h}" style="width:100%;height:auto;overflow:visible;" role="img">'
-        f'{grid}{bars}{lbls}</svg>'
+        f'{grid}{bars}{vals}{lbls}</svg>'
     )
 
 
@@ -726,7 +766,8 @@ def chart_line(values: list[float], labels: list[str], color: str, unit: str = "
     path = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts)
     area = path + f" L{w},{h-24} L0,{h-24} Z"
     dots = "".join(
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{color}"><title>{esc(labels[i])}: {values[i]:.3g}{unit}</title></circle>'
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="{T["bg"]}" stroke="{color}" stroke-width="2">'
+        f'<title>{esc(labels[i])}: {values[i]:.3g}{unit}</title></circle>'
         for i, (x, y) in enumerate(pts)
     )
     zero_y = None
@@ -791,15 +832,15 @@ def decode_upload(data: bytes) -> np.ndarray | None:
 
 def img_frame(b64s: str, title: str, tag_html: str) -> str:
     return (
-        f'<figure style="margin:0;background:{T["surface"]};border:1px solid {T["border"]};'
-        f'border-radius:12px;overflow:hidden;">'
-        f'<figcaption style="padding:9px 13px;background:rgba(255,255,255,.017);'
+        f'<figure style="margin:0;background:{T["elevated"]};border:1px solid {T["border"]};'
+        f'border-radius:16px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4);">'
+        f'<figcaption style="padding:10px 14px;background:rgba(255,255,255,.025);'
         f'border-bottom:1px solid {T["border"]};display:flex;align-items:center;'
         f'justify-content:space-between;gap:8px;">'
-        f'<span style="font-size:13px;font-weight:550;color:{T["text_2"]};">{esc(title)}</span>'
+        f'<span style="font-size:13px;font-weight:700;color:{T["text"]};">{esc(title)}</span>'
         f'{tag_html}</figcaption>'
-        f'<div style="padding:9px;"><img src="data:image/png;base64,{b64s}" alt="{esc(title)}" '
-        f'style="width:100%;border-radius:7px;display:block;image-rendering:auto;"/></div></figure>'
+        f'<div style="padding:10px;"><img src="data:image/png;base64,{b64s}" alt="{esc(title)}" '
+        f'style="width:100%;border-radius:9px;display:block;image-rendering:pixelated;"/></div></figure>'
     )
 
 
@@ -813,18 +854,22 @@ def comparison_slider(before: str, after: str, uid: str = "cmp") -> str:
       <img src="data:image/png;base64,{before}" alt="Before" style="width:200%;max-width:none;display:block;" draggable="false"/>
     </div>
     <div id="h_{uid}" style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:2px;
-         height:100%;background:rgba(255,255,255,.85);pointer-events:none;">
-      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:34px;height:34px;
-           background:{T['elevated']};border:1px solid rgba(255,255,255,.28);border-radius:50%;
-           box-shadow:0 2px 10px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;">
-        <svg viewBox="0 0 24 24" style="width:15px;height:15px;fill:none;stroke:#fff;stroke-width:2;
+         height:100%;background:rgba(255,255,255,.9);pointer-events:none;
+         box-shadow:0 0 8px rgba(0,201,167,.6);">
+      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;
+           background:{T['elevated']};border:2px solid rgba(0,201,167,.6);border-radius:50%;
+           box-shadow:0 0 16px rgba(0,201,167,.35),0 3px 12px rgba(0,0,0,.6);
+           display:flex;align-items:center;justify-content:center;">
+        <svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:{T['accent']};stroke-width:2.2;
              stroke-linecap:round;stroke-linejoin:round;"><path d="m9 7-5 5 5 5M15 7l5 5-5 5"/></svg>
       </div>
     </div>
-    <span style="position:absolute;bottom:11px;left:12px;padding:3px 9px;border-radius:5px;font-size:10.5px;
-          font-weight:600;letter-spacing:.07em;color:#fff;background:rgba(11,18,32,.78);">BEFORE</span>
-    <span style="position:absolute;bottom:11px;right:12px;padding:3px 9px;border-radius:5px;font-size:10.5px;
-          font-weight:600;letter-spacing:.07em;color:#fff;background:rgba(11,18,32,.78);">AFTER</span>
+    <span style="position:absolute;top:12px;left:12px;padding:4px 10px;border-radius:6px;font-size:10.5px;
+          font-weight:700;letter-spacing:.09em;color:{T['text']};background:rgba(7,11,20,.82);
+          border:1px solid rgba(255,255,255,.12);">BEFORE</span>
+    <span style="position:absolute;top:12px;right:12px;padding:4px 10px;border-radius:6px;font-size:10.5px;
+          font-weight:700;letter-spacing:.09em;color:{T['text']};background:rgba(7,11,20,.82);
+          border:1px solid rgba(255,255,255,.12);">AFTER</span>
   </div>
   <div style="text-align:center;font-size:12px;color:{T['text_3']};margin-top:8px;">
     Drag to compare · input on the left, filtered output on the right
@@ -980,21 +1025,22 @@ def sidebar(clf_ready: bool, hw) -> None:
     n_rtl = len(rtl_inventory())
 
     st.sidebar.markdown(
-        '<div style="padding:20px 20px 17px;"><div style="display:flex;align-items:center;gap:11px;">'
-        '<div style="width:34px;height:34px;border-radius:10px;flex-shrink:0;'
-        'background:linear-gradient(145deg,#00DEB9,#00927A);'
-        'box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 2px 12px rgba(0,201,167,.35);'
+        '<div style="padding:20px 20px 16px;">'
+        '<div style="display:flex;align-items:center;gap:13px;">'
+        '<div style="width:38px;height:38px;border-radius:12px;flex-shrink:0;'
+        'background:linear-gradient(145deg,#1DEDC3 0%,#00A889 100%);'
+        'box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 4px 16px rgba(0,201,167,.45),0 0 0 1px rgba(0,201,167,.2);'
         'display:flex;align-items:center;justify-content:center;">'
-        '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:#fff;stroke-width:1.9;'
+        '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2.1;'
         'stroke-linecap:round;stroke-linejoin:round;"><path d="m12 3 8 4.5-8 4.5-8-4.5L12 3z"/>'
         '<path d="m4 12.5 8 4.5 8-4.5"/></svg></div>'
-        '<div class="brand-t" style="min-width:0;">'
-        '<div style="font-size:15px;font-weight:640;color:#E8EDF7;letter-spacing:-0.019em;line-height:1.2;">'
+        '<div style="min-width:0;">'
+        '<div style="font-size:15px;font-weight:750;color:#EDF3F9;letter-spacing:-0.025em;line-height:1.2;">'
         'AdaptiveDenoise</div>'
-        '<div style="font-size:10.5px;color:rgba(0,201,167,.55);margin-top:2px;letter-spacing:.05em;">'
-        'AI · FPGA · Image Enhancement</div></div></div></div>'
-        '<div style="height:1px;margin:0 16px;background:linear-gradient(90deg,transparent,'
-        'rgba(0,201,167,.2) 20%,rgba(0,201,167,.2) 80%,transparent);"></div>',
+        '<div style="font-size:10px;color:rgba(0,201,167,.65);margin-top:3px;letter-spacing:.09em;font-weight:700;text-transform:uppercase;">'
+        'AI · FPGA · VISION</div></div></div></div>'
+        '<div style="height:1px;margin:0 14px 4px;background:linear-gradient(90deg,transparent,'
+        'rgba(99,130,170,.15) 25%,rgba(99,130,170,.15) 75%,transparent);"></div>',
         unsafe_allow_html=True,
     )
 
@@ -1020,9 +1066,9 @@ def sidebar(clf_ready: bool, hw) -> None:
         '<div class="sb-detail"><div style="height:1px;margin:20px 16px 0;'
         'background:linear-gradient(90deg,transparent,rgba(148,163,184,.11) 20%,'
         'rgba(148,163,184,.11) 80%,transparent);"></div>'
-        '<div class="nav-group" style="margin:16px 0 4px;">System</div>'
-        '<div style="margin:0 14px;padding:9px 12px;border-radius:11px;background:rgba(255,255,255,.022);'
-        'border:1px solid rgba(148,163,184,.075);">'
+        '<div class="nav-group" style="margin:16px 0 5px;">System</div>'
+        '<div style="margin:0 12px;padding:10px 13px;border-radius:12px;background:rgba(255,255,255,.018);'
+        'border:1px solid rgba(99,130,170,.09);box-shadow:0 1px 4px rgba(0,0,0,.25);">'
         + sb_status("Classifier", "Loaded" if clf_ready else "Not trained",
                     T["ok"] if clf_ready else T["warn"])
         + sb_status("Compute", "CPU (software)", T["accent"])
@@ -1176,23 +1222,43 @@ def stepper(cur: int) -> str:
     for i, (name, desc) in enumerate(steps, 1):
         done, active = i < cur, i == cur
         if done:
-            circ = f'<div style="width:26px;height:26px;border-radius:50%;background:{T["accent"]};display:flex;align-items:center;justify-content:center;flex-shrink:0;">{ico("check",13,"#fff",2.4)}</div>'
+            circ = (
+                f'<div style="width:28px;height:28px;border-radius:50%;background:{T["accent"]};'
+                f'box-shadow:0 0 10px rgba(0,201,167,.4);display:flex;align-items:center;'
+                f'justify-content:center;flex-shrink:0;">{ico("check",14,"#040F0B",2.5)}</div>'
+            )
         elif active:
-            circ = f'<div style="width:26px;height:26px;border-radius:50%;background:{T["accent"]};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:650;flex-shrink:0;">{i}</div>'
+            circ = (
+                f'<div style="width:28px;height:28px;border-radius:50%;background:{T["accent"]};'
+                f'box-shadow:0 0 14px rgba(0,201,167,.55);color:#040F0B;display:flex;align-items:center;'
+                f'justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">{i}</div>'
+            )
         else:
-            circ = f'<div style="width:26px;height:26px;border-radius:50%;background:transparent;border:1px solid {T["border_st"]};color:{T["text_3"]};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0;">{i}</div>'
+            circ = (
+                f'<div style="width:28px;height:28px;border-radius:50%;background:transparent;'
+                f'border:1.5px solid {T["border_st"]};color:{T["text_3"]};display:flex;align-items:center;'
+                f'justify-content:center;font-size:13px;font-weight:600;flex-shrink:0;">{i}</div>'
+            )
         tc = T["text"] if active else (T["text_2"] if done else T["text_3"])
         out.append(
-            f'<div style="display:flex;align-items:center;gap:9px;min-width:0;">{circ}'
-            f'<div style="min-width:0;"><div style="font-size:13px;font-weight:{"600" if active else "500"};'
-            f'color:{tc};line-height:1.25;white-space:nowrap;">{name}</div>'
-            f'<div style="font-size:11.5px;color:{T["text_3"]};white-space:nowrap;">{desc}</div></div></div>'
+            f'<div style="display:flex;align-items:center;gap:10px;min-width:0;">{circ}'
+            f'<div style="min-width:0;">'
+            f'<div style="font-size:13.5px;font-weight:{"700" if active else "500"};'
+            f'color:{tc};line-height:1.2;white-space:nowrap;">{name}</div>'
+            f'<div style="font-size:11.5px;color:{T["text_3"]};white-space:nowrap;margin-top:1px;">{desc}</div>'
+            f'</div></div>'
         )
         if i < len(steps):
-            out.append(f'<div style="flex:1;height:1px;background:{T["accent"] if i < cur else T["border"]};margin:0 14px;min-width:16px;"></div>')
+            done_line = i < cur
+            out.append(
+                f'<div style="flex:1;height:1.5px;min-width:20px;margin:0 10px;border-radius:2px;'
+                f'background:{"linear-gradient(90deg," + T["accent"] + "," + T["accent"] + ")" if done_line else T["border"]};">'
+                f'</div>'
+            )
     return (
-        f'<nav aria-label="Progress" style="display:flex;align-items:center;background:{T["surface"]};'
-        f'border:1px solid {T["border"]};border-radius:12px;padding:14px 18px;margin-bottom:24px;">'
+        f'<nav aria-label="Progress" style="display:flex;align-items:center;background:{T["elevated"]};'
+        f'border:1px solid {T["border"]};border-radius:16px;padding:16px 20px;margin-bottom:26px;'
+        f'box-shadow:0 2px 8px rgba(0,0,0,.3);">'
         + "".join(out) + "</nav>"
     )
 
@@ -1490,11 +1556,14 @@ def step3(cfg) -> None:
     gain = result.psnr_improvement
 
     st.markdown(
-        f'<div class="rise" style="display:flex;align-items:center;gap:11px;margin-bottom:18px;">'
-        f'<div style="width:26px;height:26px;border-radius:50%;background:{T["ok"]}1F;'
-        f'display:flex;align-items:center;justify-content:center;">{ico("check",14,T["ok"],2.4)}</div>'
-        f'<div><div style="font-size:16px;font-weight:600;color:{T["text"]};">Processing complete</div>'
-        f'<div style="font-size:13px;color:{T["text_3"]};">{esc(ss.source_label or "uploaded image")}</div></div>'
+        f'<div class="rise" style="display:flex;align-items:center;gap:14px;margin-bottom:22px;'
+        f'padding:14px 18px;background:{T["elevated"]};border:1px solid {T["border"]};'
+        f'border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.25);">'
+        f'<div style="width:36px;height:36px;border-radius:50%;background:{T["ok"]}1F;'
+        f'border:1.5px solid {T["ok"]}40;flex-shrink:0;'
+        f'display:flex;align-items:center;justify-content:center;">{ico("check",18,T["ok"],2.5)}</div>'
+        f'<div><div style="font-size:17px;font-weight:700;color:{T["text"]};line-height:1.25;">Processing complete</div>'
+        f'<div style="font-size:13px;color:{T["text_3"]};margin-top:2px;">{esc(ss.source_label or "uploaded image")}</div></div>'
         f'</div>',
         unsafe_allow_html=True,
     )
