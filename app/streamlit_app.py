@@ -77,31 +77,28 @@ st.set_page_config(
 
 T = {
     # surfaces
-    "bg":        "#0B1220",
-    "surface":   "#111B2E",
-    "elevated":  "#16233A",
-    "hover":     "#1B2A44",
+    "bg":        "#08080F",
+    "surface":   "#0F0F1A",
+    "elevated":  "#161622",
+    "hover":     "#1C1C2A",
     # borders
-    "border":    "rgba(148,163,184,0.11)",
-    "border_st": "rgba(148,163,184,0.18)",
+    "border":    "rgba(120,120,200,0.13)",
+    "border_st": "rgba(140,140,220,0.22)",
     # text
-    "text":      "#E8EDF7",
-    "text_2":    "#94A3BC",
-    # text_3 carries small 11–12px labels (table headers, KPI sublines, captions).
-    # #64748B measured 3.62:1 on the card surface — below AA — so it is lifted
-    # here rather than per-component.
-    "text_3":    "#8797B0",
-    # accent
-    "accent":    "#4F7CFF",
-    "accent_hi": "#7C9FFF",
-    "accent_dim": "rgba(79,124,255,0.12)",
+    "text":      "#EEEEF8",
+    "text_2":    "#8888AA",
+    "text_3":    "#606080",
+    # accent — teal/cyan for FPGA/tech aesthetic
+    "accent":    "#00C9A7",
+    "accent_hi": "#33DEC0",
+    "accent_dim": "rgba(0,201,167,0.12)",
     # semantic
-    "ok":        "#3DD68C",
-    "warn":      "#E0A42E",
-    "err":       "#F2555A",
-    "info":      "#4F7CFF",
+    "ok":        "#22C55E",
+    "warn":      "#F59E0B",
+    "err":       "#EF4444",
+    "info":      "#3B82F6",
     "violet":    "#A78BFA",
-    "cyan":      "#34D3DE",
+    "cyan":      "#06B6D4",
 }
 
 # Noise class → (accent, label)
@@ -151,7 +148,8 @@ CSS = f"""
   --accent:{T['accent']}; --accent-hi:{T['accent_hi']}; --accent-dim:{T['accent_dim']};
   --ok:{T['ok']}; --warn:{T['warn']}; --err:{T['err']};
   --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s8:32px; --s10:40px; --s12:48px;
-  --r-sm:8px; --r-md:10px; --r-lg:12px; --r-xl:16px;
+  --r-sm:8px; --r-md:10px; --r-lg:14px; --r-xl:18px;
+  --glow: 0 0 20px rgba(0,201,167,0.15); --glow-sm: 0 0 10px rgba(0,201,167,0.10);
   --ease:cubic-bezier(0.32,0.72,0,1);
   --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
   --mono:'SF Mono',ui-monospace,'JetBrains Mono','Cascadia Code',Consolas,monospace;
@@ -178,14 +176,14 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
 /* ══ SIDEBAR ══ */
 [data-testid="stSidebar"],
 [data-testid="stSidebar"] > div,
-[data-testid="stSidebarContent"] {{ background: #090F1B !important; }}
+[data-testid="stSidebarContent"] {{ background: linear-gradient(180deg,#0B0B14 0%,#070710 100%) !important; }}
 /* Streamlit renders the sidebar as a resizable section carrying an INLINE
    width (300px default). Only `width` with !important overrides an inline
    declaration — min/max-width alone are silently outranked. */
 [data-testid="stSidebar"] {{
-  border-right: 1px solid var(--border) !important;
-  width: 252px !important; min-width: 252px !important; max-width: 252px !important;
-  flex: 0 0 252px !important;
+  border-right: 1px solid rgba(0,201,167,0.13) !important;
+  width: 256px !important; min-width: 256px !important; max-width: 256px !important;
+  flex: 0 0 256px !important;
 }}
 /* the drag-to-resize handle is noise on a fixed-width rail */
 [data-testid="stSidebar"] [data-testid="stSidebarResizeHandle"] {{ display: none !important; }}
@@ -227,20 +225,21 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
   font-size:14px; font-weight:450; letter-spacing:-0.006em; line-height:1;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }}
-[data-testid="stSidebar"] .nav-idle {{ color:#8E9CB5; }}
-[data-testid="stSidebar"] .nav-idle .nav-label {{ color:#8E9CB5; }}
-[data-testid="stSidebar"] .nav-idle svg {{ opacity:.82; }}
+[data-testid="stSidebar"] .nav-idle {{ color:#505070; }}
+[data-testid="stSidebar"] .nav-idle .nav-label {{ color:#505070; }}
+[data-testid="stSidebar"] .nav-idle svg {{ opacity:.65; }}
 [data-testid="stSidebar"] .nav-active {{
   position:relative;
-  background: linear-gradient(96deg, rgba(79,124,255,.19), rgba(79,124,255,.07));
-  border-color: rgba(79,124,255,.26);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.045);
+  background: linear-gradient(96deg,rgba(0,201,167,.16),rgba(0,201,167,.06));
+  border-color: rgba(0,201,167,.28);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04),0 0 12px rgba(0,201,167,.08);
 }}
-[data-testid="stSidebar"] .nav-active .nav-label {{ color:#EAF0FF; font-weight:600; }}
-[data-testid="stSidebar"] .nav-active svg {{ color: var(--accent-hi); }}
+[data-testid="stSidebar"] .nav-active .nav-label {{ color:#DDFAF4; font-weight:600; }}
+[data-testid="stSidebar"] .nav-active svg {{ color: var(--accent-hi); filter:drop-shadow(0 0 4px rgba(0,201,167,.4)); }}
 [data-testid="stSidebar"] .nav-active::before {{
-  content:""; position:absolute; left:-7px; top:10px; bottom:10px; width:2px;
-  border-radius:2px; background: linear-gradient(180deg,#7C9FFF,#3D63E0);
+  content:""; position:absolute; left:-7px; top:10px; bottom:10px; width:2.5px;
+  border-radius:3px; background: linear-gradient(180deg,#00DEB9,#00927A);
+  box-shadow: 0 0 6px rgba(0,201,167,.6);
 }}
 
 /* transparent hit target laid exactly over each row */
@@ -256,8 +255,8 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
 [data-testid="stSidebar"] .stButton > button p {{ color:transparent !important; font-size:0 !important; }}
 
 [data-testid="stSidebar"] .nav-group {{
-  font-size:10.5px; font-weight:600; letter-spacing:.13em; text-transform:uppercase;
-  color:#6F7D97; padding:0 var(--s5); margin:18px 0 7px;
+  font-size:10px; font-weight:700; letter-spacing:.16em; text-transform:uppercase;
+  color:rgba(0,201,167,.4); padding:0 var(--s5); margin:20px 0 6px;
 }}
 [data-testid="stSidebar"] .nav-group-first {{ margin-top:var(--s1); }}
 
@@ -271,22 +270,28 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
 /* primary */
 [data-testid="stMain"] .stButton > button[kind="primary"],
 [data-testid="stMain"] .stDownloadButton > button {{
-  background: var(--accent) !important; color:#fff !important;
-  border:1px solid rgba(255,255,255,.09) !important;
-  box-shadow: 0 1px 2px rgba(0,0,0,.35) !important;
+  background: linear-gradient(135deg,#00C9A7,#00A88C) !important; color:#000 !important;
+  border:1px solid rgba(0,201,167,.3) !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,.4),0 0 12px rgba(0,201,167,.2) !important;
+  font-weight:600 !important;
 }}
 [data-testid="stMain"] .stButton > button[kind="primary"]:hover,
 [data-testid="stMain"] .stDownloadButton > button:hover {{
-  background: #5F89FF !important; box-shadow: 0 2px 10px rgba(79,124,255,.30) !important;
+  background: linear-gradient(135deg,#00DEB9,#00C9A7) !important;
+  box-shadow: 0 2px 16px rgba(0,201,167,.4) !important;
+  transform: translateY(-1px) !important;
 }}
-[data-testid="stMain"] .stButton > button[kind="primary"]:active {{ background:#4470EE !important; }}
+[data-testid="stMain"] .stButton > button[kind="primary"]:active {{
+  background: linear-gradient(135deg,#00A88C,#008F76) !important;
+  transform: translateY(0) !important;
+}}
 /* secondary */
 [data-testid="stMain"] .stButton > button[kind="secondary"] {{
-  background: var(--elevated) !important; color: var(--text) !important;
+  background: rgba(22,22,34,.9) !important; color: var(--text) !important;
   border:1px solid var(--border-st) !important; box-shadow:none !important;
 }}
 [data-testid="stMain"] .stButton > button[kind="secondary"]:hover {{
-  background: var(--hover) !important; border-color: rgba(148,163,184,.30) !important;
+  background: var(--hover) !important; border-color: rgba(0,201,167,.25) !important;
 }}
 [data-testid="stMain"] .stButton > button:disabled {{ opacity:.42 !important; cursor:not-allowed !important; }}
 
@@ -311,10 +316,14 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
 
 /* uploader dropzone is a <section data-testid="stFileUploaderDropzone"> */
 [data-testid="stFileUploaderDropzone"] {{
-  border:1.5px dashed var(--border-st) !important; border-radius: var(--r-lg) !important;
-  transition: border-color 170ms var(--ease), background 170ms var(--ease) !important;
+  border:1.5px dashed rgba(0,201,167,.25) !important; border-radius: var(--r-lg) !important;
+  background: rgba(0,201,167,.03) !important;
+  transition: border-color 180ms var(--ease),background 180ms var(--ease) !important;
 }}
-[data-testid="stFileUploaderDropzone"]:hover {{ border-color: rgba(79,124,255,.5) !important; }}
+[data-testid="stFileUploaderDropzone"]:hover {{
+  border-color: rgba(0,201,167,.5) !important;
+  background: rgba(0,201,167,.06) !important;
+}}
 [data-testid="stFileUploaderDropzone"] small {{ color: var(--text-3) !important; }}
 [data-testid="stFileUploaderDropzone"] button {{
   border-radius: var(--r-sm) !important; font-size:13px !important;
@@ -328,8 +337,8 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
   font-size:14px !important; font-weight:500 !important; padding: 9px var(--s3) !important;
   border-radius: var(--r-sm) var(--r-sm) 0 0 !important; transition: color 170ms var(--ease) !important;
 }}
-[data-testid="stTab"]:hover {{ color: var(--text-2) !important; background: rgba(255,255,255,.03) !important; }}
-[data-testid="stTab"][aria-selected="true"] {{ color: var(--text) !important; font-weight:600 !important; }}
+[data-testid="stTab"]:hover {{ color: var(--text-2) !important; background: rgba(0,201,167,.04) !important; }}
+[data-testid="stTab"][aria-selected="true"] {{ color: var(--accent-hi) !important; font-weight:600 !important; }}
 [data-testid="stTabs"] [data-baseweb="tab-highlight"],
 [data-testid="stTabs"] [class*="Highlight"] {{ background: var(--accent) !important; height:2px !important; }}
 
@@ -342,8 +351,11 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
 [data-testid="stExpander"] summary:hover {{ color: var(--text) !important; }}
 
 /* ══ PROGRESS ══ */
-[data-testid="stMain"] .stProgress > div > div {{ background: rgba(148,163,184,.14) !important; height:5px !important; border-radius:100px !important; }}
-[data-testid="stMain"] .stProgress > div > div > div {{ background: var(--accent) !important; border-radius:100px !important; }}
+[data-testid="stMain"] .stProgress > div > div {{ background: rgba(0,201,167,.1) !important; height:4px !important; border-radius:100px !important; }}
+[data-testid="stMain"] .stProgress > div > div > div {{
+  background: linear-gradient(90deg,var(--accent),var(--accent-hi)) !important;
+  border-radius:100px !important; box-shadow:0 0 6px rgba(0,201,167,.4) !important;
+}}
 
 /* ══ TOGGLE ══ */
 [data-testid="stSidebar"] [data-baseweb="checkbox"] div[aria-checked="true"] {{ background: var(--accent) !important; }}
@@ -354,30 +366,50 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
 [data-testid="column"]:last-child {{ padding-right:0 !important; }}
 
 /* ══ SCROLLBAR ══ */
-::-webkit-scrollbar {{ width:8px; height:8px; }}
+::-webkit-scrollbar {{ width:5px; height:5px; }}
 ::-webkit-scrollbar-track {{ background:transparent; }}
-::-webkit-scrollbar-thumb {{ background: rgba(148,163,184,.20); border-radius:100px; border:2px solid transparent; background-clip:padding-box; }}
-::-webkit-scrollbar-thumb:hover {{ background: rgba(148,163,184,.34); background-clip:padding-box; }}
+::-webkit-scrollbar-thumb {{ background: rgba(0,201,167,.18); border-radius:100px; }}
+::-webkit-scrollbar-thumb:hover {{ background: rgba(0,201,167,.35); }}
 
 /* ══ SHARED COMPONENT CLASSES ══ */
 .card {{
-  background: var(--surface); border:1px solid var(--border); border-radius: var(--r-lg);
-  padding: var(--s5); transition: border-color 170ms var(--ease);
+  background: linear-gradient(145deg,rgba(15,15,26,.98),rgba(8,8,15,.98));
+  border:1px solid var(--border); border-radius: var(--r-lg);
+  padding: var(--s5); transition: border-color 200ms var(--ease),box-shadow 200ms var(--ease);
+  backdrop-filter: blur(8px);
 }}
-.card-i {{ transition: border-color 170ms var(--ease), background 170ms var(--ease); }}
-.card-i:hover {{ border-color: var(--border-st); background: var(--elevated); }}
+.card-i {{ transition: border-color 200ms var(--ease),box-shadow 200ms var(--ease); cursor:pointer; }}
+.card-i:hover {{
+  border-color: rgba(0,201,167,.22);
+  box-shadow: 0 4px 24px rgba(0,0,0,.3),0 0 16px rgba(0,201,167,.06);
+}}
 
 .kpi {{
-  background: var(--surface); border:1px solid var(--border); border-radius: var(--r-lg);
-  padding: var(--s4) var(--s5); transition: border-color 170ms var(--ease);
+  position:relative; overflow:hidden;
+  background: linear-gradient(145deg,rgba(15,15,26,.98),rgba(8,8,15,.98));
+  border:1px solid var(--border); border-radius: var(--r-lg);
+  padding: var(--s5) var(--s5) var(--s4);
+  transition: border-color 200ms var(--ease),box-shadow 200ms var(--ease),transform 200ms var(--ease);
 }}
-.kpi:hover {{ border-color: var(--border-st); }}
-.kpi-h {{ display:flex; align-items:center; gap:7px; margin-bottom:10px; }}
-.kpi-h svg {{ width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }}
-.kpi-l {{ font-size:12px; font-weight:550; color: var(--text-3); letter-spacing:.02em; }}
-.kpi-v {{ font-size:26px; font-weight:640; color: var(--text); letter-spacing:-0.032em; line-height:1.1;
+.kpi::before {{
+  content:""; position:absolute; top:0; left:0; right:0; height:2px;
+  background: linear-gradient(90deg,transparent,currentColor,transparent); opacity:.5;
+}}
+.kpi:hover {{
+  border-color: var(--border-st);
+  box-shadow: 0 6px 28px rgba(0,0,0,.35),0 0 10px rgba(0,201,167,.1);
+  transform: translateY(-1px);
+}}
+.kpi-h {{ display:flex; align-items:center; gap:8px; margin-bottom:14px; }}
+.kpi-icon {{
+  width:32px; height:32px; border-radius:8px; display:flex; align-items:center;
+  justify-content:center; flex-shrink:0;
+}}
+.kpi-icon svg {{ width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }}
+.kpi-l {{ font-size:11px; font-weight:700; color: var(--text-3); letter-spacing:.08em; text-transform:uppercase; }}
+.kpi-v {{ font-size:28px; font-weight:700; color: var(--text); letter-spacing:-0.036em; line-height:1.05;
          font-variant-numeric: tabular-nums; }}
-.kpi-s {{ font-size:12px; color: var(--text-3); margin-top:5px; }}
+.kpi-s {{ font-size:12px; color: var(--text-3); margin-top:6px; line-height:1.5; }}
 
 .badge {{
   display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:100px;
@@ -386,35 +418,36 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.021em; }}
 .dot {{ width:5px; height:5px; border-radius:50%; flex-shrink:0; }}
 
 .sec {{ display:flex; align-items:center; gap:var(--s3); margin: var(--s8) 0 var(--s4); }}
-.sec-t {{ font-size:16px; font-weight:600; color: var(--text); letter-spacing:-0.014em; white-space:nowrap; }}
-.sec-r {{ flex:1; height:1px; background: var(--border); }}
+.sec-t {{ font-size:11px; font-weight:800; color: var(--accent); letter-spacing:.14em; text-transform:uppercase; white-space:nowrap; }}
+.sec-r {{ flex:1; height:1px; background: linear-gradient(90deg,rgba(0,201,167,.3),transparent); }}
 
 .tbl {{ width:100%; border-collapse:collapse; font-size:13px; }}
 .tbl th {{
-  text-align:left; padding:9px var(--s3); font-size:11.5px; font-weight:600; color: var(--text-3);
-  text-transform:uppercase; letter-spacing:.075em; border-bottom:1px solid var(--border); white-space:nowrap;
+  text-align:left; padding:10px var(--s3); font-size:11px; font-weight:700; color: var(--accent);
+  text-transform:uppercase; letter-spacing:.09em; border-bottom:1px solid var(--border); white-space:nowrap;
+  background: rgba(0,201,167,.04);
 }}
 .tbl td {{ padding:11px var(--s3); color: var(--text-2); border-bottom:1px solid rgba(148,163,184,.06); white-space:nowrap; }}
 .tbl tr:last-child td {{ border-bottom:none; }}
 .tbl tbody tr {{ transition: background 140ms var(--ease); }}
-.tbl tbody tr:hover {{ background: rgba(255,255,255,.022); }}
+.tbl tbody tr:hover {{ background: rgba(0,201,167,.04); }}
 .tbl-w {{ overflow-x:auto; border:1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }}
 
 .code {{
-  background:#080D18; border:1px solid var(--border); border-radius: var(--r-md);
+  background:rgba(4,4,10,.95); border:1px solid var(--border); border-radius: var(--r-md);
   padding: var(--s4); font-family: var(--mono); font-size:12.5px; line-height:1.7;
   color:#C8D3E8; overflow-x:auto; white-space:pre;
 }}
-.code .k {{ color:#7C9FFF; }} .code .s {{ color:#7FD9A6; }} .code .c {{ color:#5A6785; font-style:italic; }}
+.code .k {{ color:#33DEC0; }} .code .s {{ color:#A7F0D8; }} .code .c {{ color:#404060; font-style:italic; }}
 
 .empty {{
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  padding: var(--s12) var(--s6); border:1px dashed var(--border-st); border-radius: var(--r-xl);
-  background: var(--surface); text-align:center; gap:var(--s2);
+  padding: var(--s12) var(--s6); border:1px dashed rgba(0,201,167,.18); border-radius: var(--r-xl);
+  background: rgba(0,201,167,.02); text-align:center; gap:var(--s2);
 }}
-.empty svg {{ width:22px; height:22px; fill:none; stroke: var(--text-3); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }}
+.empty svg {{ width:24px; height:24px; fill:none; stroke: var(--accent); opacity:.4; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }}
 
-.skel {{ background: linear-gradient(90deg, rgba(148,163,184,.07) 25%, rgba(148,163,184,.13) 37%, rgba(148,163,184,.07) 63%);
+.skel {{ background: linear-gradient(90deg,rgba(0,201,167,.04) 25%,rgba(0,201,167,.09) 37%,rgba(0,201,167,.04) 63%);
         background-size:400% 100%; animation: shimmer 1.4s ease infinite; border-radius:var(--r-sm); }}
 @keyframes shimmer {{ 0%{{background-position:100% 0}} 100%{{background-position:0 0}} }}
 @keyframes spin {{ to {{ transform: rotate(360deg) }} }}
@@ -512,10 +545,14 @@ def page_head(title: str, sub: str, crumb: list[str] | None = None) -> str:
             + "".join(parts) + "</div>"
         )
     return (
-        f'<div class="rise" style="margin-bottom:24px;">{trail}'
-        f'<h1 class="page-t" style="font-size:28px;font-weight:650;letter-spacing:-0.028em;'
-        f'margin:0;line-height:1.2;color:{T["text"]};">{esc(title)}</h1>'
-        f'<p style="font-size:14.5px;color:{T["text_2"]};margin:7px 0 0;line-height:1.55;">{sub}</p></div>'
+        f'<div class="rise" style="margin-bottom:28px;">{trail}'
+        f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">'
+        f'<div style="width:3px;height:32px;border-radius:3px;'
+        f'background:linear-gradient(180deg,{T["accent"]},{T["cyan"]});'
+        f'box-shadow:0 0 8px rgba(0,201,167,.5);flex-shrink:0;"></div>'
+        f'<h1 class="page-t" style="font-size:30px;font-weight:800;letter-spacing:-0.03em;'
+        f'margin:0;line-height:1.15;color:{T["text"]};">{esc(title)}</h1></div>'
+        f'<p style="font-size:14px;color:{T["text_2"]};margin:0 0 0 15px;line-height:1.6;">{sub}</p></div>'
     )
 
 
@@ -535,7 +572,9 @@ def badge(text: str, color: str, dot: bool = False, solid: bool = False) -> str:
 def kpi(icon: str, label: str, value: str, sub: str, color: str = None) -> str:
     color = color or T["accent"]
     return (
-        f'<div class="kpi"><div class="kpi-h" style="color:{color};">{ico(icon,14,color,1.9)}'
+        f'<div class="kpi" style="color:{color};">'
+        f'<div class="kpi-h">'
+        f'<div class="kpi-icon" style="background:{color}18;color:{color};">{ico(icon,15,color,1.9)}</div>'
         f'<span class="kpi-l">{esc(label)}</span></div>'
         f'<div class="kpi-v">{value}</div>'
         f'<div class="kpi-s">{sub}</div></div>'
@@ -942,9 +981,9 @@ def sidebar(clf_ready: bool, hw) -> None:
 
     st.sidebar.markdown(
         '<div style="padding:20px 20px 17px;"><div style="display:flex;align-items:center;gap:11px;">'
-        '<div style="width:33px;height:33px;border-radius:9px;flex-shrink:0;'
-        'background:linear-gradient(145deg,#5B84FF,#3D5FE0 60%,#2E42BE);'
-        'box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 2px 8px rgba(61,95,224,.30);'
+        '<div style="width:34px;height:34px;border-radius:10px;flex-shrink:0;'
+        'background:linear-gradient(145deg,#00DEB9,#00927A);'
+        'box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 2px 12px rgba(0,201,167,.35);'
         'display:flex;align-items:center;justify-content:center;">'
         '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:#fff;stroke-width:1.9;'
         'stroke-linecap:round;stroke-linejoin:round;"><path d="m12 3 8 4.5-8 4.5-8-4.5L12 3z"/>'
@@ -952,10 +991,10 @@ def sidebar(clf_ready: bool, hw) -> None:
         '<div class="brand-t" style="min-width:0;">'
         '<div style="font-size:15px;font-weight:640;color:#E8EDF7;letter-spacing:-0.019em;line-height:1.2;">'
         'AdaptiveDenoise</div>'
-        '<div style="font-size:10.5px;color:#7180A0;margin-top:2px;letter-spacing:.035em;">'
+        '<div style="font-size:10.5px;color:rgba(0,201,167,.55);margin-top:2px;letter-spacing:.05em;">'
         'AI · FPGA · Image Enhancement</div></div></div></div>'
         '<div style="height:1px;margin:0 16px;background:linear-gradient(90deg,transparent,'
-        'rgba(148,163,184,.13) 20%,rgba(148,163,184,.13) 80%,transparent);"></div>',
+        'rgba(0,201,167,.2) 20%,rgba(0,201,167,.2) 80%,transparent);"></div>',
         unsafe_allow_html=True,
     )
 
