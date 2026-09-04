@@ -9,10 +9,10 @@
 
 [theme]
 base                     = "dark"
-primaryColor             = "#4F7CFF"   # T["accent"]
-backgroundColor          = "#0B1220"   # T["bg"]
-secondaryBackgroundColor = "#16233A"   # T["elevated"]
-textColor                = "#E8EDF7"   # T["text"]
+primaryColor             = "#00C9A7"   # T["accent"]
+backgroundColor          = "#070B14"   # T["bg"]
+secondaryBackgroundColor = "#161C2B"   # T["elevated"]
+textColor                = "#E6EDF3"   # T["text"]
 font                     = "sans serif"
 
 [server]
