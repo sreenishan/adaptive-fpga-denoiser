@@ -68,7 +68,11 @@ st.set_page_config(
     page_title="AdaptiveDenoise",
     page_icon="◈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    # "auto" keeps the rail open on a wide screen and collapses it on a narrow
+    # one. With "expanded" the sidebar opened over the content on a phone,
+    # taking 256px of a 375px viewport — 68% of the screen — so the page behind
+    # it was unreadable until the user found the collapse control.
+    initial_sidebar_state="auto",
 )
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -148,7 +152,22 @@ CSS = f"""
   --accent:{T['accent']}; --accent-hi:{T['accent_hi']}; --accent-dim:{T['accent_dim']};
   --ok:{T['ok']}; --warn:{T['warn']}; --err:{T['err']}; --info:{T['info']};
   --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s8:32px; --s10:40px; --s12:48px;
-  --r-sm:8px; --r-md:11px; --r-lg:15px; --r-xl:20px;
+  --r-xs:6px; --r-sm:8px; --r-md:10px; --r-lg:14px; --r-xl:18px; --r-full:100px;
+
+  /* Type scale. Seven steps, no half-pixels — the file previously carried
+     sixteen sizes including 10.5/11.5/12.5/13.5, which is an eyeballed ramp
+     rather than a scale. Each step is a visible jump from its neighbour. */
+  --fs-0:11px;   /* uppercase eyebrows, badges, table headers */
+  --fs-1:12px;   /* meta, captions, helper text */
+  --fs-2:13px;   /* table cells, key-value rows, dense body */
+  --fs-3:14px;   /* body */
+  --fs-4:16px;   /* card titles */
+  --fs-5:20px;   /* section headings */
+  --fs-6:28px;   /* page title */
+  /* Weights. Three, not the nine (450/500/550/600/640/650/700/750/800) that
+     were in use — adjacent steps like 640 vs 650 are indistinguishable and
+     communicate no hierarchy. */
+  --fw-normal:500; --fw-medium:600; --fw-bold:700;
   --glow: 0 0 28px rgba(0,201,167,0.20); --glow-sm: 0 0 14px rgba(0,201,167,0.13);
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
   --shadow-md: 0 4px 16px rgba(0,0,0,0.55), 0 2px 4px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
@@ -167,8 +186,19 @@ html, body, [class*="css"], .stApp {{ font-family: var(--font); -webkit-font-smo
 #MainMenu, footer {{ visibility: hidden; }}
 
 h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }}
-[data-testid="stMain"] p {{ color: var(--text-2); font-size: 14px; line-height: 1.65; }}
+[data-testid="stMain"] p {{ color: var(--text-2); font-size: var(--fs-3); line-height: 1.65; }}
 .tnum {{ font-variant-numeric: tabular-nums; font-feature-settings:'tnum' 1; }}
+
+/* Streamlit wraps every button label in its own <p>, so the blanket rule above
+   used to repaint it --text-2. On the teal primary that was grey #8B949E on
+   #00A88C — a 1.02:1 contrast ratio, i.e. an invisible label. The button
+   already carries the correct colour; the label just has to inherit it. */
+[data-testid="stMain"] .stButton > button p,
+[data-testid="stMain"] .stDownloadButton > button p,
+[data-testid="stMain"] .stFormSubmitButton > button p {{
+  color: inherit !important; font-size: inherit !important;
+  font-weight: inherit !important; line-height: 1.2 !important;
+}}
 
 /* ── focus: visible everywhere, keyboard-first ── */
 *:focus-visible {{
@@ -225,7 +255,7 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
   stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round;
 }}
 [data-testid="stSidebar"] .nav-label {{
-  font-size:14px; font-weight:450; letter-spacing:-0.006em; line-height:1;
+  font-size:var(--fs-3); font-weight:500; letter-spacing:-0.006em; line-height:1;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }}
 [data-testid="stSidebar"] .nav-idle {{ color:#505070; }}
@@ -237,7 +267,7 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
   border-color: rgba(0,201,167,.32);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 0 16px rgba(0,201,167,.10), var(--shadow-sm);
 }}
-[data-testid="stSidebar"] .nav-active .nav-label {{ color:#E0FBF5; font-weight:650; }}
+[data-testid="stSidebar"] .nav-active .nav-label {{ color:#E0FBF5; font-weight:700; }}
 [data-testid="stSidebar"] .nav-active svg {{ color: var(--accent-hi); filter:drop-shadow(0 0 5px rgba(0,201,167,.45)); }}
 [data-testid="stSidebar"] .nav-active::before {{
   content:""; position:absolute; left:-7px; top:9px; bottom:9px; width:3px;
@@ -258,7 +288,7 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
 [data-testid="stSidebar"] .stButton > button p {{ color:transparent !important; font-size:0 !important; }}
 
 [data-testid="stSidebar"] .nav-group {{
-  font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+  font-size:var(--fs-0); font-weight:700; letter-spacing:.14em; text-transform:uppercase;
   color:rgba(99,130,170,.55); padding:0 var(--s5); margin:20px 0 6px;
 }}
 [data-testid="stSidebar"] .nav-group-first {{ margin-top:var(--s1); }}
@@ -266,8 +296,11 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
 /* ══ BUTTONS ══ */
 [data-testid="stMain"] .stButton > button,
 [data-testid="stMain"] .stDownloadButton > button {{
+  /* Never break a label mid-phrase: "＋ New / processing" across two lines
+     reads as two controls at a glance. */
+  white-space:nowrap;
   height:38px; border-radius:var(--r-md) !important; font-family:var(--font) !important;
-  font-size:14px !important; font-weight:550 !important; letter-spacing:-0.004em !important;
+  font-size:var(--fs-3) !important; font-weight:var(--fw-medium) !important; letter-spacing:-0.004em !important;
   transition: all 170ms var(--ease) !important;
 }}
 /* primary */
@@ -305,17 +338,17 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
    data-baseweb="select" that older Streamlit builds emit. */
 [data-testid="stMain"] .react-aria-ComboBox > div,
 [data-testid="stMain"] [data-testid="stSelectbox"] > div > div {{
-  border-radius: var(--r-md) !important; font-size:14px !important;
+  border-radius: var(--r-md) !important; font-size:var(--fs-3) !important;
 }}
 [role="listbox"], .react-aria-Popover {{
   border-radius: var(--r-md) !important; border:1px solid var(--border-st) !important;
 }}
-[role="option"] {{ font-size:14px !important; }}
+[role="option"] {{ font-size:var(--fs-3) !important; }}
 
 [data-testid="stMain"] label, [data-testid="stMain"] [data-testid="stWidgetLabel"] p {{
-  font-size:13px !important; font-weight:500 !important; color: var(--text-2) !important;
+  font-size:var(--fs-2) !important; font-weight:500 !important; color: var(--text-2) !important;
 }}
-[data-testid="stMain"] input {{ border-radius: var(--r-md) !important; font-size:14px !important; }}
+[data-testid="stMain"] input {{ border-radius: var(--r-md) !important; font-size:var(--fs-3) !important; }}
 
 /* uploader dropzone is a <section data-testid="stFileUploaderDropzone"> */
 [data-testid="stFileUploaderDropzone"] {{
@@ -329,7 +362,7 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
 }}
 [data-testid="stFileUploaderDropzone"] small {{ color: var(--text-3) !important; }}
 [data-testid="stFileUploaderDropzone"] button {{
-  border-radius: var(--r-sm) !important; font-size:13px !important;
+  border-radius: var(--r-sm) !important; font-size:var(--fs-2) !important;
   border:1px solid var(--border-st) !important;
 }}
 
@@ -337,7 +370,7 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
 [data-testid="stTabs"] [role="tablist"] {{ gap: var(--s1); border-bottom:1px solid var(--border); }}
 [data-testid="stTab"] {{
   background: transparent !important; color: var(--text-3) !important;
-  font-size:14px !important; font-weight:500 !important; padding: 9px var(--s3) !important;
+  font-size:var(--fs-3) !important; font-weight:500 !important; padding: 9px var(--s3) !important;
   border-radius: var(--r-sm) var(--r-sm) 0 0 !important; transition: color 170ms var(--ease) !important;
 }}
 [data-testid="stTab"]:hover {{ color: var(--text-2) !important; background: rgba(0,201,167,.04) !important; }}
@@ -350,28 +383,33 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
   background: var(--surface) !important; border:1px solid var(--border) !important;
   border-radius: var(--r-lg) !important;
 }}
-[data-testid="stExpander"] summary {{ font-size:14px !important; font-weight:500 !important; color: var(--text-2) !important; }}
+[data-testid="stExpander"] summary {{ font-size:var(--fs-3) !important; font-weight:500 !important; color: var(--text-2) !important; }}
 [data-testid="stExpander"] summary:hover {{ color: var(--text) !important; }}
 
 /* ══ PROGRESS ══ */
-[data-testid="stMain"] .stProgress > div > div {{ background: rgba(0,201,167,.1) !important; height:4px !important; border-radius:100px !important; }}
+[data-testid="stMain"] .stProgress > div > div {{ background: rgba(0,201,167,.1) !important; height:4px !important; border-radius:var(--r-full) !important; }}
 [data-testid="stMain"] .stProgress > div > div > div {{
   background: linear-gradient(90deg,var(--accent),var(--accent-hi)) !important;
-  border-radius:100px !important; box-shadow:0 0 6px rgba(0,201,167,.4) !important;
+  border-radius:var(--r-full) !important; box-shadow:0 0 6px rgba(0,201,167,.4) !important;
 }}
 
-/* ══ TOGGLE ══ */
-[data-testid="stSidebar"] [data-baseweb="checkbox"] div[aria-checked="true"] {{ background: var(--accent) !important; }}
+/* ══ TOGGLE ══
+   Nothing here on purpose. This build renders a toggle as a plain
+   <input type="checkbox"> inside [data-testid="stCheckbox"] — no
+   data-baseweb attribute and no aria-checked — so the rule that used to sit
+   here (`[data-baseweb="checkbox"] div[aria-checked="true"]`) matched nothing.
+   The accent already comes from primaryColor in .streamlit/config.toml, which
+   is the right place for it. */
 
 /* ══ COLUMNS ══ */
-[data-testid="column"] {{ padding: 0 6px !important; }}
-[data-testid="column"]:first-child {{ padding-left:0 !important; }}
-[data-testid="column"]:last-child {{ padding-right:0 !important; }}
+[data-testid="stColumn"] {{ padding: 0 6px !important; }}
+[data-testid="stColumn"]:first-child {{ padding-left:0 !important; }}
+[data-testid="stColumn"]:last-child {{ padding-right:0 !important; }}
 
 /* ══ SCROLLBAR ══ */
 ::-webkit-scrollbar {{ width:5px; height:5px; }}
 ::-webkit-scrollbar-track {{ background:transparent; }}
-::-webkit-scrollbar-thumb {{ background: rgba(0,201,167,.18); border-radius:100px; }}
+::-webkit-scrollbar-thumb {{ background: rgba(0,201,167,.18); border-radius:var(--r-full); }}
 ::-webkit-scrollbar-thumb:hover {{ background: rgba(0,201,167,.35); }}
 
 /* ══ SHARED COMPONENT CLASSES ══ */
@@ -417,35 +455,46 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
 }}
 .kpi-h {{ display:flex; align-items:center; gap:10px; margin-bottom:16px; }}
 .kpi-icon {{
-  width:36px; height:36px; border-radius:11px; display:flex; align-items:center;
+  width:36px; height:36px; border-radius:var(--r-md); display:flex; align-items:center;
   justify-content:center; flex-shrink:0;
   box-shadow: 0 2px 8px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
 }}
 .kpi-icon svg {{ width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }}
-.kpi-l {{ font-size:10px; font-weight:700; color: var(--text-3); letter-spacing:.12em; text-transform:uppercase; }}
-.kpi-v {{ font-size:30px; font-weight:800; color: var(--text); letter-spacing:-0.04em; line-height:1.0;
+.kpi-l {{ font-size:var(--fs-0); font-weight:700; color: var(--text-3); letter-spacing:.12em; text-transform:uppercase; }}
+.kpi-v {{ font-size:var(--fs-6); font-weight:700; color: var(--text); letter-spacing:-0.04em; line-height:1.0;
          font-variant-numeric: tabular-nums; }}
-.kpi-s {{ font-size:11.5px; color: var(--text-3); margin-top:9px; line-height:1.55; }}
+.kpi-s {{ font-size:var(--fs-1); color: var(--text-3); margin-top:9px; line-height:1.55; }}
 
 .badge {{
-  display:inline-flex; align-items:center; gap:5px; padding:2.5px 9px; border-radius:100px;
-  font-size:11px; font-weight:650; line-height:1.5; white-space:nowrap;
+  display:inline-flex; align-items:center; gap:5px; padding:2.5px 9px; border-radius:var(--r-full);
+  font-size:var(--fs-0); font-weight:700; line-height:1.5; white-space:nowrap;
   letter-spacing:.015em;
 }}
 .dot {{ width:5px; height:5px; border-radius:50%; flex-shrink:0; }}
 
 .sec {{ display:flex; align-items:center; gap:var(--s3); margin: var(--s8) 0 var(--s5); }}
 .sec-t {{
-  font-size:10px; font-weight:800; color: var(--accent); letter-spacing:.15em; text-transform:uppercase;
-  white-space:nowrap; padding:4px 11px; border-radius:6px;
+  font-size:var(--fs-0); font-weight:700; color: var(--accent); letter-spacing:.15em; text-transform:uppercase;
+  white-space:nowrap; padding:4px 11px; border-radius:var(--r-xs);
   background: rgba(0,201,167,.07); border:1px solid rgba(0,201,167,.18);
   box-shadow: 0 0 12px rgba(0,201,167,.06);
 }}
 .sec-r {{ flex:1; height:1px; background: linear-gradient(90deg,rgba(0,201,167,.18),transparent); }}
 
-.tbl {{ width:100%; border-collapse:collapse; font-size:13px; }}
+/* Two hierarchy levels below .sec — see card_title() / group_label(). */
+.card-t {{
+  font-size: var(--fs-2); font-weight: var(--fw-medium); color: var(--text);
+  letter-spacing:-0.01em; margin:0 0 var(--s3);
+}}
+.group-t {{
+  font-size: var(--fs-3); font-weight: var(--fw-medium); color: var(--text);
+  letter-spacing:-0.01em; margin: var(--s6) 0 var(--s1);
+}}
+.group-t-first {{ margin-top:0; }}
+
+.tbl {{ width:100%; border-collapse:collapse; font-size:var(--fs-2); }}
 .tbl th {{
-  text-align:left; padding:10px var(--s3); font-size:10px; font-weight:800; color: var(--text-3);
+  text-align:left; padding:10px var(--s3); font-size:var(--fs-0); font-weight:700; color: var(--text-3);
   text-transform:uppercase; letter-spacing:.12em; border-bottom:1px solid var(--border); white-space:nowrap;
   background: rgba(255,255,255,.02);
 }}
@@ -455,10 +504,20 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
 .tbl tbody tr:hover {{ background: rgba(255,255,255,.025); }}
 .tbl-w {{ overflow-x:auto; border:1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-sm); }}
 
-.code {{
+/* Code listings.
+   `code_block()` emits <pre class="code">, but Streamlit rewrites that into its
+   own <div data-testid="stMarkdownPre"> and DROPS the class — so the wrapper is
+   what has to be styled. The <pre> still earns its place: Markdown does not
+   descend into one, which is what stops a `# comment` becoming an <h1>. */
+.code,
+[data-testid="stMain"] [data-testid="stMarkdownPre"] {{
+  display:block; margin:0;
   background:rgba(4,4,10,.95); border:1px solid var(--border); border-radius: var(--r-md);
-  padding: var(--s4); font-family: var(--mono); font-size:12.5px; line-height:1.7;
-  color:#C8D3E8; overflow-x:auto; white-space:pre;
+  padding: var(--s4); font-family: var(--mono) !important; font-size: var(--fs-2); line-height:1.7;
+  color:#C8D3E8; overflow-x:auto; white-space:pre; tab-size:4;
+}}
+[data-testid="stMain"] [data-testid="stMarkdownPre"] * {{
+  font-family: var(--mono) !important; font-size: inherit !important; color: inherit !important;
 }}
 .code .k {{ color:#33DEC0; }} .code .s {{ color:#A7F0D8; }} .code .c {{ color:#404060; font-style:italic; }}
 
@@ -484,22 +543,63 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
    keeps them and sheds the status/preferences panels instead — an empty 200px
    column of icons would waste the width rather than reflow it. */
 @media (max-width: 1100px) {{
+  /* min/max-width must be overridden too. The base rule pins all three at
+     256px with !important, so overriding `width` alone did nothing — the
+     min-width floor held the rail at 256px and this whole block was inert. */
+  /* 224px, not 200px: the wordmark needs ~122px beside a 38px icon, and at
+     200px "AdaptiveDenoise" wrapped onto two lines while "Processing History"
+     truncated to an ellipsis. The brand also steps down a size here. */
   [data-testid="stSidebar"][data-testid="stSidebar"] {{
-    width:200px !important; flex:0 0 200px !important;
+    width:224px !important; min-width:224px !important; max-width:224px !important;
+    flex:0 0 224px !important;
   }}
+  [data-testid="stSidebar"] .sb-brand-name {{ font-size: var(--fs-3) !important; }}
+  [data-testid="stSidebar"] .sb-brand-icon {{ width:32px !important; height:32px !important; }}
   [data-testid="stSidebar"] .sb-detail {{ display:none !important; }}
   [data-testid="stSidebar"] .nav-row {{ margin:0 var(--s2) 2px; padding:0 10px; gap:9px; }}
-  [data-testid="stSidebar"] .nav-label {{ font-size:13px; }}
+  [data-testid="stSidebar"] .nav-label {{ font-size:var(--fs-2); }}
   [data-testid="stSidebar"] .stButton > button {{
     width:calc(100% - 16px) !important; margin:0 var(--s2) !important;
   }}
   [data-testid="stMain"] .block-container {{ padding: var(--s5) var(--s5) var(--s10); }}
 }}
-@media (max-width: 760px) {{
+/* 900px, not 760px. Between those widths the three-up action row squeezed the
+   primary button to 116px against a ~150px label: wrapping split it across two
+   lines, and nowrap clipped it outright. Full-width stacked actions fit at any
+   width in this range, and a portrait tablet reads a single column better than
+   a cramped three-up one. Above 900px the narrowest action column is ~164px,
+   which clears the label. */
+@media (max-width: 900px) {{
   [data-testid="stMain"] .block-container {{ padding: var(--s4) var(--s4) var(--s8); }}
-  .kpi-v {{ font-size:22px; }}
-  .page-t {{ font-size:22px !important; }}
-  [data-testid="column"] {{ padding:0 !important; min-width:100% !important; }}
+  .kpi-v {{ font-size:var(--fs-5); }}
+  .page-t {{ font-size:var(--fs-5) !important; }}
+  /* Real reflow: columns stack rather than being squeezed side by side.
+     min-width:100% alone did nothing — Streamlit's row is a nowrap flex
+     container, so the children just compressed. The row has to be allowed to
+     wrap before a 100% child can take its own line. */
+  [data-testid="stHorizontalBlock"] {{
+    flex-wrap: wrap !important; gap: var(--s3) !important;
+  }}
+  [data-testid="stColumn"] {{
+    padding:0 !important; min-width:100% !important; flex: 1 1 100% !important;
+  }}
+
+  /* Touch targets. 38-40px is below the 44px minimum for a finger, and these
+     are the app's primary actions. */
+  [data-testid="stMain"] .stButton > button,
+  [data-testid="stMain"] .stDownloadButton > button {{ height:44px !important; }}
+  [data-testid="stMain"] .react-aria-ComboBox > div,
+  [data-testid="stMain"] [data-testid="stSelectbox"] > div > div {{ min-height:44px !important; }}
+
+  /* The empty state's 48px vertical padding is generous on a phone, where the
+     viewport is the scarce resource rather than the horizontal space. */
+  .empty {{ padding: var(--s8) var(--s4); }}
+  .sec {{ margin: var(--s6) 0 var(--s4); }}
+  .card {{ padding: var(--s4); }}
+
+  /* A wide table scrolls inside its own frame instead of widening the page. */
+  .tbl-w {{ -webkit-overflow-scrolling: touch; }}
+  figure img {{ height:auto; }}
 }}
 </style>
 """
@@ -560,9 +660,9 @@ def page_head(title: str, sub: str, crumb: list[str] | None = None) -> str:
         for i, c in enumerate(crumb):
             last = i == len(crumb) - 1
             col = T["text_2"] if last else T["text_3"]
-            parts.append(f'<span style="color:{col};font-size:12.5px;font-weight:{"550" if last else "400"};">{esc(c)}</span>')
+            parts.append(f'<span style="color:{col};font-size:var(--fs-1);font-weight:{"550" if last else "400"};">{esc(c)}</span>')
             if not last:
-                parts.append(f'<span style="color:{T["text_3"]};opacity:.5;font-size:12.5px;">/</span>')
+                parts.append(f'<span style="color:{T["text_3"]};opacity:.5;font-size:var(--fs-1);">/</span>')
         trail = (
             '<div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;">'
             + "".join(parts) + "</div>"
@@ -573,15 +673,35 @@ def page_head(title: str, sub: str, crumb: list[str] | None = None) -> str:
         f'<div style="width:4px;height:38px;border-radius:4px;flex-shrink:0;'
         f'background:linear-gradient(180deg,#2AEBB8 0%,{T["accent"]} 55%,{T["cyan"]} 100%);'
         f'box-shadow:0 0 14px rgba(0,201,167,.6);"></div>'
-        f'<h1 class="page-t" style="font-size:29px;font-weight:800;letter-spacing:-0.036em;'
+        f'<h1 class="page-t" style="font-size:var(--fs-6);font-weight:700;letter-spacing:-0.036em;'
         f'margin:0;line-height:1.15;color:{T["text"]};">{esc(title)}</h1></div>'
-        f'<p style="font-size:14px;color:{T["text_2"]};margin:0 0 0 20px;line-height:1.65;'
+        f'<p style="font-size:var(--fs-3);color:{T["text_2"]};margin:0 0 0 20px;line-height:1.65;'
         f'letter-spacing:-.005em;">{sub}</p></div>'
     )
 
 
 def section(title: str) -> str:
+    """A major page region. The top of the in-page hierarchy below the title."""
     return f'<div class="sec"><span class="sec-t">{esc(title)}</span><span class="sec-r"></span></div>'
+
+
+def card_title(title: str) -> str:
+    """The label at the top of a card — one level below `section()`.
+
+    This role was previously written inline at sixteen call sites across two
+    sizes and six different bottom margins (3/4/6/10/12/16px), so the same kind
+    of heading sat at a different height on every page. One helper, one margin.
+    """
+    return f'<div class="card-t">{esc(title)}</div>'
+
+
+def group_label(title: str, first: bool = False) -> str:
+    """A field-group heading inside a settings tab — below `card_title()`.
+
+    `first` drops the leading margin so a group opening a tab does not push
+    itself away from the tab strip.
+    """
+    return f'<div class="group-t{" group-t-first" if first else ""}">{esc(title)}</div>'
 
 
 def badge(text: str, color: str, dot: bool = False, solid: bool = False) -> str:
@@ -619,12 +739,12 @@ def alert(title: str, body: str, kind: str = "info") -> str:
     }
     color, icon = cfg.get(kind, cfg["info"])
     return (
-        f'<div role="status" style="display:flex;gap:12px;padding:12px 16px;border-radius:12px;'
+        f'<div role="status" style="display:flex;gap:12px;padding:12px 16px;border-radius:var(--r-lg);'
         f'background:{color}0D;border:1px solid {color}2A;border-left:3px solid {color};margin:10px 0;'
         f'box-shadow:0 2px 8px rgba(0,0,0,.2);">'
         f'<div style="margin-top:2px;flex-shrink:0;">{ico(icon,14,color,2.0)}</div><div style="min-width:0;">'
-        f'<div style="font-size:13px;font-weight:700;color:{color};margin-bottom:3px;letter-spacing:-.01em;">{esc(title)}</div>'
-        f'<div style="font-size:13px;color:{T["text_2"]};line-height:1.58;">{body}</div></div></div>'
+        f'<div style="font-size:var(--fs-2);font-weight:700;color:{color};margin-bottom:3px;letter-spacing:-.01em;">{esc(title)}</div>'
+        f'<div style="font-size:var(--fs-2);color:{T["text_2"]};line-height:1.58;">{body}</div></div></div>'
     )
 
 
@@ -634,25 +754,46 @@ def empty(icon: str, title: str, why: str, next_step: str) -> str:
         f'<div style="width:52px;height:52px;border-radius:50%;background:{T["elevated"]};'
         f'border:1.5px solid {T["border_st"]};display:flex;align-items:center;justify-content:center;'
         f'margin:0 auto 14px;">{ico(icon,24,T["text_3"],1.6)}</div>'
-        f'<div style="font-size:16px;font-weight:700;color:{T["text"]};margin-bottom:6px;">{esc(title)}</div>'
-        f'<div style="font-size:13.5px;color:{T["text_2"]};max-width:440px;line-height:1.65;margin:0 auto;">{why}</div>'
-        f'<div style="font-size:13px;color:{T["accent"]};max-width:440px;line-height:1.6;margin:10px auto 0;'
-        f'padding:8px 14px;background:{T["accent_dim"]};border-radius:8px;border:1px solid rgba(0,201,167,.2);">'
+        f'<div style="font-size:var(--fs-4);font-weight:700;color:{T["text"]};margin-bottom:6px;">{esc(title)}</div>'
+        f'<div style="font-size:var(--fs-2);color:{T["text_2"]};max-width:440px;line-height:1.65;margin:0 auto;">{why}</div>'
+        f'<div style="font-size:var(--fs-2);color:{T["accent"]};max-width:440px;line-height:1.6;margin:10px auto 0;'
+        f'padding:8px 14px;background:{T["accent_dim"]};border-radius:var(--r-sm);border:1px solid rgba(0,201,167,.2);">'
         f'{next_step}</div>'
         f'</div>'
     )
 
 
-def table(headers: list[str], rows: list[list[str]], align_r: set[int] = frozenset()) -> str:
+def table(
+    headers: list[str],
+    rows: list[list[str]],
+    align_r: set[int] = frozenset(),
+    flex_col: int = 0,
+) -> str:
+    """A data table whose metadata columns hug their content.
+
+    `flex_col` is the column that absorbs the leftover width — normally the one
+    holding the identifier or the prose. Every other column is sized to its
+    content (`width:1%` with `nowrap` is the standard trick), which keeps the
+    numbers and badges in a tight, scannable group instead of being spread
+    across the full width. Without this a three-column table stretched ~400px
+    of content over 1092px, leaving a 489px void between a module name and its
+    size — the eye had to travel the whole row to pair a value with its label.
+    """
+    def w(i: int) -> str:
+        return "width:100%;" if i == flex_col else "width:1%;white-space:nowrap;"
+
     th = "".join(
-        f'<th style="text-align:{"right" if i in align_r else "left"};">{esc(h)}</th>'
+        f'<th style="text-align:{"right" if i in align_r else "left"};{w(i)}">{esc(h)}</th>'
         for i, h in enumerate(headers)
     )
     body = ""
     for r in rows:
         tds = "".join(
-            f'<td style="text-align:{"right" if i in align_r else "left"};'
-            f'{"font-variant-numeric:tabular-nums;" if i in align_r else ""}">{c}</td>'
+            f'<td style="text-align:{"right" if i in align_r else "left"};{w(i)}'
+            f'{"font-variant-numeric:tabular-nums;" if i in align_r else ""}'
+            # The flexible column is the only one allowed to wrap, and it
+            # truncates rather than forcing the whole table into a scrollbar.
+            f'{"max-width:0;overflow:hidden;text-overflow:ellipsis;" if i == flex_col else ""}">{c}</td>'
             for i, c in enumerate(r)
         )
         body += f"<tr>{tds}</tr>"
@@ -665,8 +806,8 @@ def kv_rows(pairs: list[tuple[str, str]]) -> str:
         out += (
             f'<div style="display:flex;justify-content:space-between;align-items:center;gap:16px;'
             f'padding:9px 0;border-bottom:1px solid rgba(99,130,170,.07);">'
-            f'<span style="font-size:12.5px;color:{T["text_3"]};font-weight:500;letter-spacing:.01em;">{esc(k)}</span>'
-            f'<span style="font-size:13px;color:{T["text_2"]};font-variant-numeric:tabular-nums;'
+            f'<span style="font-size:var(--fs-1);color:{T["text_3"]};font-weight:500;letter-spacing:.01em;">{esc(k)}</span>'
+            f'<span style="font-size:var(--fs-2);color:{T["text_2"]};font-variant-numeric:tabular-nums;'
             f'text-align:right;font-weight:500;">{v}</span></div>'
         )
     return f'<div>{out}</div>'
@@ -676,16 +817,25 @@ def meter(pct: float, color: str, height: int = 6) -> str:
     w = max(0.0, min(100.0, pct))
     return (
         f'<div role="progressbar" aria-valuenow="{w:.0f}" aria-valuemin="0" aria-valuemax="100" '
-        f'style="background:rgba(99,130,170,.11);border-radius:100px;height:{height}px;overflow:hidden;'
+        f'style="background:rgba(99,130,170,.11);border-radius:var(--r-full);height:{height}px;overflow:hidden;'
         f'box-shadow:inset 0 1px 2px rgba(0,0,0,.3);">'
         f'<div style="width:{w}%;height:100%;background:linear-gradient(90deg,{color}CC,{color});'
-        f'border-radius:100px;transition:width 280ms var(--ease);'
+        f'border-radius:var(--r-full);transition:width 280ms var(--ease);'
         f'box-shadow:0 0 6px {color}60;"></div></div>'
     )
 
 
 def code_block(text: str) -> str:
-    return f'<div class="code">{esc(text)}</div>'
+    """Render a code sample verbatim.
+
+    The element MUST be <pre>, not <div>. Streamlit runs the string through a
+    Markdown parser before the HTML reaches the page, and Markdown descends
+    into a <div>: every ``# comment`` in a Python sample became an <h1> (anchor
+    link and all) and every blank line split the listing into <p> blocks. The
+    API page's samples were unreadable because of it. Markdown does not process
+    the content of a <pre>, so the listing survives as written.
+    """
+    return f'<pre class="code">{esc(text)}</pre>'
 
 
 # ── SVG charts (no external libs; full control, theme-consistent) ──────────
@@ -694,12 +844,17 @@ def chart_bars(values: list[float], labels: list[str], color: str, unit: str = "
     if not values:
         return ""
     n, w, gap = len(values), 640, 8
-    bw = (w - gap * (n - 1)) / n
+    # Cap the bar width and centre the group. Dividing the full width by n made
+    # a single run render as one 640px block filling the whole card — a solid
+    # slab that reads as a broken chart rather than as one measurement.
+    bw = min(56.0, (w - gap * (n - 1)) / n)
+    group_w = n * bw + gap * (n - 1)
+    x0 = max(0.0, (w - group_w) / 2)
     top = max(values) or 1.0
     bars, lbls, vals = "", "", ""
     for i, v in enumerate(values):
         bh = max(2.0, (v / top) * (h - 36))
-        x, y = i * (bw + gap), (h - 24) - bh
+        x, y = x0 + i * (bw + gap), (h - 24) - bh
         bars += (
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{bh:.1f}" rx="4" fill="{color}" opacity="0.82">'
             f'<title>{esc(labels[i])}: {v:.4g}{unit}</title></rect>'
@@ -795,8 +950,8 @@ def legend(items: list[tuple[str, str, str]]) -> str:
         + "".join(
             f'<div style="display:flex;align-items:center;gap:9px;">'
             f'<span style="width:8px;height:8px;border-radius:2px;background:{c};flex-shrink:0;"></span>'
-            f'<span style="font-size:13px;color:{T["text_2"]};flex:1;">{esc(n)}</span>'
-            f'<span style="font-size:13px;color:{T["text"]};font-weight:550;'
+            f'<span style="font-size:var(--fs-2);color:{T["text_2"]};flex:1;">{esc(n)}</span>'
+            f'<span style="font-size:var(--fs-2);color:{T["text"]};font-weight:600;'
             f'font-variant-numeric:tabular-nums;">{esc(v)}</span></div>'
             for n, v, c in items
         )
@@ -833,21 +988,25 @@ def decode_upload(data: bytes) -> np.ndarray | None:
 def img_frame(b64s: str, title: str, tag_html: str) -> str:
     return (
         f'<figure style="margin:0;background:{T["elevated"]};border:1px solid {T["border"]};'
-        f'border-radius:16px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4);">'
+        f'border-radius:var(--r-xl);overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4);">'
         f'<figcaption style="padding:10px 14px;background:rgba(255,255,255,.025);'
         f'border-bottom:1px solid {T["border"]};display:flex;align-items:center;'
         f'justify-content:space-between;gap:8px;">'
-        f'<span style="font-size:13px;font-weight:700;color:{T["text"]};">{esc(title)}</span>'
+        f'<span style="font-size:var(--fs-2);font-weight:700;color:{T["text"]};">{esc(title)}</span>'
         f'{tag_html}</figcaption>'
         f'<div style="padding:10px;"><img src="data:image/png;base64,{b64s}" alt="{esc(title)}" '
-        f'style="width:100%;border-radius:9px;display:block;image-rendering:pixelated;"/></div></figure>'
+        f'style="width:100%;border-radius:var(--r-md);display:block;image-rendering:pixelated;"/></div></figure>'
     )
 
 
 def comparison_slider(before: str, after: str, uid: str = "cmp") -> str:
+    # The frame is capped rather than filling the column. `width:100%` on a
+    # 224x224 sample stretched it to 1092x1092 — a 4.9x upscale of a small
+    # image, wrapped in a 1094px-tall block that was mostly empty. 560px keeps
+    # the upscale modest and the whole control on screen at once.
     return f"""
-<div style="margin:12px 0 6px;">
-  <div id="w_{uid}" style="position:relative;overflow:hidden;border-radius:12px;cursor:col-resize;
+<div style="margin:12px auto 6px;max-width:560px;">
+  <div id="w_{uid}" style="position:relative;overflow:hidden;border-radius:var(--r-lg);cursor:col-resize;
        user-select:none;border:1px solid {T['border']};" role="group" aria-label="Before and after comparison">
     <img src="data:image/png;base64,{after}" alt="After" style="width:100%;display:block;" draggable="false"/>
     <div id="c_{uid}" style="position:absolute;inset:0 auto 0 0;width:50%;overflow:hidden;pointer-events:none;">
@@ -864,14 +1023,14 @@ def comparison_slider(before: str, after: str, uid: str = "cmp") -> str:
              stroke-linecap:round;stroke-linejoin:round;"><path d="m9 7-5 5 5 5M15 7l5 5-5 5"/></svg>
       </div>
     </div>
-    <span style="position:absolute;top:12px;left:12px;padding:4px 10px;border-radius:6px;font-size:10.5px;
+    <span style="position:absolute;top:12px;left:12px;padding:4px 10px;border-radius:var(--r-xs);font-size:var(--fs-0);
           font-weight:700;letter-spacing:.09em;color:{T['text']};background:rgba(7,11,20,.82);
           border:1px solid rgba(255,255,255,.12);">BEFORE</span>
-    <span style="position:absolute;top:12px;right:12px;padding:4px 10px;border-radius:6px;font-size:10.5px;
+    <span style="position:absolute;top:12px;right:12px;padding:4px 10px;border-radius:var(--r-xs);font-size:var(--fs-0);
           font-weight:700;letter-spacing:.09em;color:{T['text']};background:rgba(7,11,20,.82);
           border:1px solid rgba(255,255,255,.12);">AFTER</span>
   </div>
-  <div style="text-align:center;font-size:12px;color:{T['text_3']};margin-top:8px;">
+  <div style="text-align:center;font-size:var(--fs-1);color:{T['text_3']};margin-top:8px;">
     Drag to compare · input on the left, filtered output on the right
   </div>
 </div>
@@ -1013,8 +1172,8 @@ NAV_GROUPS = [
 def sb_status(label: str, value: str, color: str) -> str:
     return (
         f'<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;">'
-        f'<span class="sb" style="font-size:12.5px;color:#7C8AA4;">{esc(label)}</span>'
-        f'<span class="sb" style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;'
+        f'<span class="sb" style="font-size:var(--fs-1);color:#7C8AA4;">{esc(label)}</span>'
+        f'<span class="sb" style="display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-1);'
         f'color:#AEBACE;font-weight:500;"><span style="width:5px;height:5px;border-radius:50%;'
         f'background:{color};flex-shrink:0;"></span>{esc(value)}</span></div>'
     )
@@ -1027,7 +1186,7 @@ def sidebar(clf_ready: bool, hw) -> None:
     st.sidebar.markdown(
         '<div style="padding:20px 20px 16px;">'
         '<div style="display:flex;align-items:center;gap:13px;">'
-        '<div style="width:38px;height:38px;border-radius:12px;flex-shrink:0;'
+        '<div class="sb-brand-icon" style="width:38px;height:38px;border-radius:var(--r-lg);flex-shrink:0;'
         'background:linear-gradient(145deg,#1DEDC3 0%,#00A889 100%);'
         'box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 4px 16px rgba(0,201,167,.45),0 0 0 1px rgba(0,201,167,.2);'
         'display:flex;align-items:center;justify-content:center;">'
@@ -1035,9 +1194,11 @@ def sidebar(clf_ready: bool, hw) -> None:
         'stroke-linecap:round;stroke-linejoin:round;"><path d="m12 3 8 4.5-8 4.5-8-4.5L12 3z"/>'
         '<path d="m4 12.5 8 4.5 8-4.5"/></svg></div>'
         '<div style="min-width:0;">'
-        '<div style="font-size:15px;font-weight:750;color:#EDF3F9;letter-spacing:-0.025em;line-height:1.2;">'
+        '<div class="sb-brand-name" style="font-size:var(--fs-4);font-weight:700;color:#EDF3F9;'
+        'letter-spacing:-0.025em;line-height:1.2;white-space:nowrap;">'
         'AdaptiveDenoise</div>'
-        '<div style="font-size:10px;color:rgba(0,201,167,.65);margin-top:3px;letter-spacing:.09em;font-weight:700;text-transform:uppercase;">'
+        '<div style="font-size:var(--fs-0);color:rgba(0,201,167,.65);margin-top:3px;letter-spacing:.08em;'
+        'font-weight:700;text-transform:uppercase;white-space:nowrap;">'
         'AI · FPGA · VISION</div></div></div></div>'
         '<div style="height:1px;margin:0 14px 4px;background:linear-gradient(90deg,transparent,'
         'rgba(99,130,170,.15) 25%,rgba(99,130,170,.15) 75%,transparent);"></div>',
@@ -1067,7 +1228,7 @@ def sidebar(clf_ready: bool, hw) -> None:
         'background:linear-gradient(90deg,transparent,rgba(148,163,184,.11) 20%,'
         'rgba(148,163,184,.11) 80%,transparent);"></div>'
         '<div class="nav-group" style="margin:16px 0 5px;">System</div>'
-        '<div style="margin:0 12px;padding:10px 13px;border-radius:12px;background:rgba(255,255,255,.018);'
+        '<div style="margin:0 12px;padding:10px 13px;border-radius:var(--r-lg);background:rgba(255,255,255,.018);'
         'border:1px solid rgba(99,130,170,.09);box-shadow:0 1px 4px rgba(0,0,0,.25);">'
         + sb_status("Classifier", "Loaded" if clf_ready else "Not trained",
                     T["ok"] if clf_ready else T["warn"])
@@ -1092,7 +1253,7 @@ def sidebar(clf_ready: bool, hw) -> None:
     st.sidebar.markdown(
         f'<div class="sb-detail" style="margin:16px 14px 22px;padding-top:13px;'
         f'border-top:1px solid rgba(148,163,184,.08);">'
-        f'<div style="font-size:11px;color:#55637E;line-height:1.6;">'
+        f'<div style="font-size:var(--fs-0);color:#55637E;line-height:1.6;">'
         f'Research build · no board attached.<br/>All timings are CPU wall-clock.</div></div>',
         unsafe_allow_html=True,
     )
@@ -1113,7 +1274,7 @@ def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
         unsafe_allow_html=True,
     )
 
-    c1, c2, _ = st.columns([1.5, 1.3, 4])
+    c1, c2, _ = st.columns([1.8, 1.5, 3.7])
     with c1:
         if st.button("＋  New processing", type="primary", use_container_width=True):
             ss.nav, ss.step = "New Processing", 1
@@ -1142,12 +1303,12 @@ def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
             st.markdown(kpi("image", "Images processed", f'{S["n"]}',
                             f'{S["px"]/1e6:.2f} megapixels total', T["accent"]), unsafe_allow_html=True)
         with k2:
-            st.markdown(kpi("clock", "Avg processing time", f'{S["avg_ms"]:.1f}<span style="font-size:15px;color:{T["text_3"]};"> ms</span>',
+            st.markdown(kpi("clock", "Avg processing time", f'{S["avg_ms"]:.1f}<span style="font-size:var(--fs-3);color:{T["text_3"]};"> ms</span>',
                             f'range {S["min_ms"]:.1f}–{S["max_ms"]:.1f} ms · CPU', T["violet"]), unsafe_allow_html=True)
         with k3:
             if S["avg_gain"] is not None:
                 st.markdown(kpi("gauge", "Avg PSNR gain",
-                                f'{S["avg_gain"]:+.2f}<span style="font-size:15px;color:{T["text_3"]};"> dB</span>',
+                                f'{S["avg_gain"]:+.2f}<span style="font-size:var(--fs-3);color:{T["text_3"]};"> dB</span>',
                                 f'over {len(S["gains"])} run(s) with a reference',
                                 T["ok"] if S["avg_gain"] > 0 else T["warn"]), unsafe_allow_html=True)
             else:
@@ -1167,8 +1328,7 @@ def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
     with e1:
         st.markdown(
             card(
-                f'<div style="font-size:13px;font-weight:600;color:{T["text"]};margin-bottom:12px;">'
-                f'Processing pipeline</div>'
+                card_title('Processing pipeline')
                 + kv_rows([
                     ("Classifier", badge("Loaded", T["ok"], dot=True) if clf_ready
                      else badge("Not trained", T["warn"], dot=True)),
@@ -1183,8 +1343,7 @@ def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
     with e2:
         st.markdown(
             card(
-                f'<div style="font-size:13px;font-weight:600;color:{T["text"]};margin-bottom:12px;">'
-                f'Hardware target</div>'
+                card_title('Hardware target')
                 + kv_rows([
                     ("RTL modules on disk", f'{n_rtl}'),
                     ("Stream geometry", f'{hw.stream.image_width}×{hw.stream.image_height} · {hw.stream.pixel_width}-bit'),
@@ -1231,21 +1390,21 @@ def stepper(cur: int) -> str:
             circ = (
                 f'<div style="width:28px;height:28px;border-radius:50%;background:{T["accent"]};'
                 f'box-shadow:0 0 14px rgba(0,201,167,.55);color:#040F0B;display:flex;align-items:center;'
-                f'justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">{i}</div>'
+                f'justify-content:center;font-size:var(--fs-2);font-weight:700;flex-shrink:0;">{i}</div>'
             )
         else:
             circ = (
                 f'<div style="width:28px;height:28px;border-radius:50%;background:transparent;'
                 f'border:1.5px solid {T["border_st"]};color:{T["text_3"]};display:flex;align-items:center;'
-                f'justify-content:center;font-size:13px;font-weight:600;flex-shrink:0;">{i}</div>'
+                f'justify-content:center;font-size:var(--fs-2);font-weight:600;flex-shrink:0;">{i}</div>'
             )
         tc = T["text"] if active else (T["text_2"] if done else T["text_3"])
         out.append(
             f'<div style="display:flex;align-items:center;gap:10px;min-width:0;">{circ}'
             f'<div style="min-width:0;">'
-            f'<div style="font-size:13.5px;font-weight:{"700" if active else "500"};'
+            f'<div style="font-size:var(--fs-2);font-weight:{"700" if active else "500"};'
             f'color:{tc};line-height:1.2;white-space:nowrap;">{name}</div>'
-            f'<div style="font-size:11.5px;color:{T["text_3"]};white-space:nowrap;margin-top:1px;">{desc}</div>'
+            f'<div style="font-size:var(--fs-1);color:{T["text_3"]};white-space:nowrap;margin-top:1px;">{desc}</div>'
             f'</div></div>'
         )
         if i < len(steps):
@@ -1257,7 +1416,7 @@ def stepper(cur: int) -> str:
             )
     return (
         f'<nav aria-label="Progress" style="display:flex;align-items:center;background:{T["elevated"]};'
-        f'border:1px solid {T["border"]};border-radius:16px;padding:16px 20px;margin-bottom:26px;'
+        f'border:1px solid {T["border"]};border-radius:var(--r-xl);padding:16px 20px;margin-bottom:26px;'
         f'box-shadow:0 2px 8px rgba(0,0,0,.3);">'
         + "".join(out) + "</nav>"
     )
@@ -1284,7 +1443,7 @@ def step1(cfg, ds) -> None:
     ss = st.session_state
     st.markdown(stepper(1), unsafe_allow_html=True)
 
-    m1, m2, _ = st.columns([1.15, 1.35, 4.5])
+    m1, m2, _ = st.columns([1.4, 1.6, 4.0])
     with m1:
         if st.button("Quick", type="primary" if ss.mode == "quick" else "secondary", use_container_width=True):
             ss.mode = "quick"; st.rerun()
@@ -1292,7 +1451,7 @@ def step1(cfg, ds) -> None:
         if st.button("Advanced", type="primary" if ss.mode == "advanced" else "secondary", use_container_width=True):
             ss.mode = "advanced"; st.rerun()
     st.markdown(
-        f'<div style="font-size:12.5px;color:{T["text_3"]};margin:6px 0 20px;">'
+        f'<div style="font-size:var(--fs-1);color:{T["text_3"]};margin:6px 0 20px;">'
         + ("Quick mode runs the recommended filter with configured defaults."
            if ss.mode == "quick" else
            "Advanced mode exposes filter override and full pipeline parameters.")
@@ -1304,12 +1463,12 @@ def step1(cfg, ds) -> None:
 
     with left:
         st.markdown(
-            f'<div style="font-size:14px;font-weight:600;color:{T["text"]};margin-bottom:10px;">'
+            f'<div style="font-size:var(--fs-3);font-weight:600;color:{T["text"]};margin-bottom:10px;">'
             f'Upload an image</div>', unsafe_allow_html=True)
         up = st.file_uploader("Drop a file or browse", type=["png", "jpg", "jpeg", "bmp", "tif", "tiff"],
                               label_visibility="collapsed")
         st.markdown(
-            f'<div style="display:flex;gap:18px;margin-top:10px;font-size:12px;color:{T["text_3"]};">'
+            f'<div style="display:flex;gap:18px;margin-top:10px;font-size:var(--fs-1);color:{T["text_3"]};">'
             f'<span>PNG · JPEG · BMP · TIFF</span><span>Converted to 8-bit greyscale</span></div>',
             unsafe_allow_html=True,
         )
@@ -1336,7 +1495,7 @@ def step1(cfg, ds) -> None:
 
     with right:
         st.markdown(
-            f'<div style="font-size:14px;font-weight:600;color:{T["text"]};margin-bottom:10px;">'
+            f'<div style="font-size:var(--fs-3);font-weight:600;color:{T["text"]};margin-bottom:10px;">'
             f'Or use a sample</div>', unsafe_allow_html=True)
         pool = samples(6, ds.image.width, ds.image.height, ds.split.seed)
         pick = st.selectbox("Sample image", list(pool), label_visibility="collapsed")
@@ -1358,7 +1517,7 @@ def step1(cfg, ds) -> None:
                 amt = st.slider("Variance (normalised)", 0.01, 0.30, 0.08, 0.01)
 
             st.markdown(
-                f'<div style="font-size:12px;color:{T["text_3"]};margin:2px 0 12px;line-height:1.55;">'
+                f'<div style="font-size:var(--fs-1);color:{T["text_3"]};margin:2px 0 12px;line-height:1.55;">'
                 f'A sample keeps its clean original, so MSE, PSNR and SSIM can be measured. '
                 f'An uploaded photo has no reference and will show no quality metrics.</div>',
                 unsafe_allow_html=True,
@@ -1412,7 +1571,7 @@ def step2(cfg, clf, clf_ready: bool) -> None:
                     f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
                     f'<div style="width:15px;height:15px;border:2px solid {T["accent"]};'
                     f'border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;"></div>'
-                    f'<span style="font-size:13.5px;color:{T["text_2"]};">Classifying noise…</span></div>'
+                    f'<span style="font-size:var(--fs-2);color:{T["text_2"]};">Classifying noise…</span></div>'
                     f'<div class="skel" style="height:11px;width:60%;margin-bottom:9px;"></div>'
                     f'<div class="skel" style="height:11px;width:85%;margin-bottom:9px;"></div>'
                     f'<div class="skel" style="height:11px;width:45%;"></div>'
@@ -1441,36 +1600,36 @@ def step2(cfg, clf, clf_ready: bool) -> None:
 
         body = (
             f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">'
-            f'<span style="font-size:13px;font-weight:600;color:{T["text"]};">'
+            f'<span style="font-size:var(--fs-2);font-weight:600;color:{T["text"]};">'
             f'{"Detection" if use_ai else "Manual classification"}</span>'
             f'{badge("CNN", T["accent"]) if use_ai else badge("Manual", T["text_3"])}</div>'
 
-            f'<div style="font-size:11.5px;color:{T["text_3"]};font-weight:550;letter-spacing:.06em;'
+            f'<div style="font-size:var(--fs-1);color:{T["text_3"]};font-weight:600;letter-spacing:.06em;'
             f'text-transform:uppercase;margin-bottom:7px;">Detected noise</div>'
             f'<div style="margin-bottom:16px;">{badge(_label(result.noise_class), nc, dot=True)}</div>'
 
-            f'<div style="font-size:11.5px;color:{T["text_3"]};font-weight:550;letter-spacing:.06em;'
+            f'<div style="font-size:var(--fs-1);color:{T["text_3"]};font-weight:600;letter-spacing:.06em;'
             f'text-transform:uppercase;margin-bottom:7px;">Confidence</div>'
         )
         if conf is not None:
             cc = T["ok"] if conf >= cfg.confidence.threshold else T["warn"]
             body += (
                 f'<div style="display:flex;align-items:center;gap:11px;margin-bottom:16px;">'
-                f'<span style="font-size:20px;font-weight:640;color:{cc};font-variant-numeric:tabular-nums;">'
+                f'<span style="font-size:var(--fs-5);font-weight:700;color:{cc};font-variant-numeric:tabular-nums;">'
                 f'{conf*100:.1f}%</span><div style="flex:1;">{meter(conf*100, cc, 5)}</div></div>'
             )
         else:
             body += (
-                f'<div style="font-size:13px;color:{T["text_3"]};margin-bottom:16px;">'
+                f'<div style="font-size:var(--fs-2);color:{T["text_3"]};margin-bottom:16px;">'
                 f'n/a — a manual choice carries no measured confidence.</div>'
             )
 
         body += (
-            f'<div style="font-size:11.5px;color:{T["text_3"]};font-weight:550;letter-spacing:.06em;'
+            f'<div style="font-size:var(--fs-1);color:{T["text_3"]};font-weight:600;letter-spacing:.06em;'
             f'text-transform:uppercase;margin-bottom:7px;">Selected filter</div>'
-            f'<div style="padding:13px 15px;border-radius:10px;background:{fc}0F;border:1px solid {fc}2E;">'
-            f'<div style="font-size:15px;font-weight:600;color:{fc};">{_flabel(rec)}</div>'
-            f'<div style="font-size:12.5px;color:{T["text_2"]};margin-top:4px;line-height:1.5;">'
+            f'<div style="padding:13px 15px;border-radius:var(--r-md);background:{fc}0F;border:1px solid {fc}2E;">'
+            f'<div style="font-size:var(--fs-3);font-weight:600;color:{fc};">{_flabel(rec)}</div>'
+            f'<div style="font-size:var(--fs-1);color:{T["text_2"]};margin-top:4px;line-height:1.5;">'
             f'{esc(FILTER_META[rec][2])}</div></div>'
         )
         st.markdown(card(body), unsafe_allow_html=True)
@@ -1516,7 +1675,7 @@ def step2(cfg, clf, clf_ready: bool) -> None:
                 ]), unsafe_allow_html=True)
 
     st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
-    a, b, _ = st.columns([1.6, 1, 4])
+    a, b, _ = st.columns([1.9, 1.2, 3.9])
     with a:
         if st.button(f"Apply {_flabel(result.selected_filter).lower()}", type="primary", use_container_width=True):
             ss.step = 3
@@ -1544,7 +1703,7 @@ def step3(cfg) -> None:
                 f'<div style="display:flex;align-items:center;gap:10px;padding:2px 0;">'
                 f'<div style="width:14px;height:14px;border:2px solid {T["accent"]};'
                 f'border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;"></div>'
-                f'<span style="font-size:13.5px;color:{T["text_2"]};">{name}…</span></div>',
+                f'<span style="font-size:var(--fs-2);color:{T["text_2"]};">{name}…</span></div>',
                 unsafe_allow_html=True,
             )
             bar.progress(frac)
@@ -1558,12 +1717,12 @@ def step3(cfg) -> None:
     st.markdown(
         f'<div class="rise" style="display:flex;align-items:center;gap:14px;margin-bottom:22px;'
         f'padding:14px 18px;background:{T["elevated"]};border:1px solid {T["border"]};'
-        f'border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.25);">'
+        f'border-radius:var(--r-lg);box-shadow:0 2px 8px rgba(0,0,0,.25);">'
         f'<div style="width:36px;height:36px;border-radius:50%;background:{T["ok"]}1F;'
         f'border:1.5px solid {T["ok"]}40;flex-shrink:0;'
         f'display:flex;align-items:center;justify-content:center;">{ico("check",18,T["ok"],2.5)}</div>'
-        f'<div><div style="font-size:17px;font-weight:700;color:{T["text"]};line-height:1.25;">Processing complete</div>'
-        f'<div style="font-size:13px;color:{T["text_3"]};margin-top:2px;">{esc(ss.source_label or "uploaded image")}</div></div>'
+        f'<div><div style="font-size:var(--fs-4);font-weight:700;color:{T["text"]};line-height:1.25;">Processing complete</div>'
+        f'<div style="font-size:var(--fs-2);color:{T["text_3"]};margin-top:2px;">{esc(ss.source_label or "uploaded image")}</div></div>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -1581,14 +1740,14 @@ def step3(cfg) -> None:
     with k3:
         if gain is not None:
             st.markdown(kpi("gauge", "PSNR gain",
-                            f'{gain:+.2f}<span style="font-size:15px;color:{T["text_3"]};"> dB</span>',
+                            f'{gain:+.2f}<span style="font-size:var(--fs-3);color:{T["text_3"]};"> dB</span>',
                             "vs the noisy input", T["ok"] if gain > 0 else T["err"]), unsafe_allow_html=True)
         else:
             st.markdown(kpi("gauge", "PSNR gain", f'<span style="color:{T["text_3"]};">—</span>',
                             "no clean reference supplied", T["text_3"]), unsafe_allow_html=True)
     with k4:
         st.markdown(kpi("clock", "Processing time",
-                        f'{total_ms:.1f}<span style="font-size:15px;color:{T["text_3"]};"> ms</span>',
+                        f'{total_ms:.1f}<span style="font-size:var(--fs-3);color:{T["text_3"]};"> ms</span>',
                         "CPU wall-clock", T["violet"]), unsafe_allow_html=True)
 
     # ── comparison ──
@@ -1701,7 +1860,7 @@ def history_table(J: list[dict]) -> str:
         ])
     return table(
         ["Time", "Source", "Size", "Noise", "Filter", "Confidence", "PSNR Δ", "Duration", "Status"],
-        rows, align_r={2, 5, 6, 7},
+        rows, align_r={2, 5, 6, 7}, flex_col=1,
     )
 
 
@@ -1737,7 +1896,7 @@ def page_history() -> None:
         view = [j for j in view if _flabel(j["filter"]) == ff]
 
     st.markdown(
-        f'<div style="font-size:13px;color:{T["text_3"]};margin:14px 0 10px;">'
+        f'<div style="font-size:var(--fs-2);color:{T["text_3"]};margin:14px 0 10px;">'
         f'{len(view)} of {len(J)} run{"s" if len(J) != 1 else ""}</div>',
         unsafe_allow_html=True,
     )
@@ -1780,7 +1939,7 @@ def page_analytics() -> None:
         st.markdown(kpi("image", "Total runs", f'{S["n"]}', "this session", T["accent"]), unsafe_allow_html=True)
     with k2:
         st.markdown(kpi("clock", "Median duration",
-                        f'{sorted(j["ms"] for j in J)[len(J)//2]:.1f}<span style="font-size:15px;color:{T["text_3"]};"> ms</span>',
+                        f'{sorted(j["ms"] for j in J)[len(J)//2]:.1f}<span style="font-size:var(--fs-3);color:{T["text_3"]};"> ms</span>',
                         "CPU wall-clock", T["violet"]), unsafe_allow_html=True)
     with k3:
         st.markdown(kpi("layers", "Megapixels", f'{S["px"]/1e6:.2f}', "total processed", T["cyan"]), unsafe_allow_html=True)
@@ -1795,8 +1954,7 @@ def page_analytics() -> None:
         segs = [(_label(c), sum(1 for j in J if j["noise"] == c), _ncolor(c)) for c in CLASSES]
         st.markdown(
             card(
-                f'<div style="font-size:13px;font-weight:600;color:{T["text"]};margin-bottom:16px;">'
-                f'Noise classification</div>'
+                card_title('Noise classification') +
                 f'<div style="display:flex;align-items:center;gap:24px;">'
                 f'<div>{chart_donut(segs)}</div>'
                 f'<div style="flex:1;min-width:0;">'
@@ -1810,8 +1968,7 @@ def page_analytics() -> None:
         counts = [sum(1 for j in J if j["filter"] == f) for f in fl]
         st.markdown(
             card(
-                f'<div style="font-size:13px;font-weight:600;color:{T["text"]};margin-bottom:16px;">'
-                f'Filter selection</div>'
+                card_title('Filter selection')
                 + chart_bars([float(c) for c in counts], [FILTER_META[f][1].replace(" filter", "") for f in fl],
                              T["accent"], " runs", 128)
             ),
@@ -1821,9 +1978,8 @@ def page_analytics() -> None:
     st.markdown(section("Trends"), unsafe_allow_html=True)
     st.markdown(
         card(
-            f'<div style="font-size:13px;font-weight:600;color:{T["text"]};margin-bottom:4px;">'
-            f'Processing duration per run</div>'
-            f'<div style="font-size:12px;color:{T["text_3"]};margin-bottom:16px;">'
+            card_title('Processing duration per run') +
+            f'<div style="font-size:var(--fs-1);color:{T["text_3"]};margin-bottom:16px;">'
             f'Milliseconds, CPU wall-clock, in run order</div>'
             + chart_bars([j["ms"] for j in J], [f'#{i+1}' for i in range(len(J))], T["violet"], " ms", 160)
         ),
@@ -1835,9 +1991,8 @@ def page_analytics() -> None:
     if len(gains) >= 2:
         st.markdown(
             card(
-                f'<div style="font-size:13px;font-weight:600;color:{T["text"]};margin-bottom:4px;">'
-                f'PSNR gain per run</div>'
-                f'<div style="font-size:12px;color:{T["text_3"]};margin-bottom:16px;">'
+                card_title('PSNR gain per run') +
+                f'<div style="font-size:var(--fs-1);color:{T["text_3"]};margin-bottom:16px;">'
                 f'Decibels versus the noisy input · dashed line is zero (no improvement)</div>'
                 + chart_line([g for _, g in gains], [f'#{i}' for i, _ in gains], T["ok"], " dB", 160)
             ),
@@ -1846,9 +2001,8 @@ def page_analytics() -> None:
     else:
         st.markdown(
             card(
-                f'<div style="font-size:13px;font-weight:600;color:{T["text"]};margin-bottom:10px;">'
-                f'PSNR gain per run</div>'
-                f'<div style="font-size:13px;color:{T["text_2"]};line-height:1.6;">'
+                card_title('PSNR gain per run') +
+                f'<div style="font-size:var(--fs-2);color:{T["text_2"]};line-height:1.6;">'
                 f'Needs at least two runs that supplied a clean reference; '
                 f'{len(gains)} recorded so far. Use a sample image with synthetic noise — '
                 f'an uploaded photo has no original to measure against.</div>'
@@ -1920,7 +2074,7 @@ def page_fpga(hw) -> None:
         ] for name, size in inv]
         st.markdown(table(["Module", "Size", "Status"], rows, align_r={1}), unsafe_allow_html=True)
         st.markdown(
-            f'<div style="font-size:12.5px;color:{T["text_3"]};margin-top:12px;line-height:1.6;">'
+            f'<div style="font-size:var(--fs-1);color:{T["text_3"]};margin-top:12px;line-height:1.6;">'
             f'{len(inv)} source file{"s" if len(inv) != 1 else ""} on disk. Presence is verified by reading '
             f'<code>rtl/</code> — it is not a claim that they have been simulated or synthesised.</div>',
             unsafe_allow_html=True,
@@ -1962,7 +2116,7 @@ def page_api(cfg) -> None:
 
     with t1:
         st.markdown(
-            f'<div style="font-size:13px;color:{T["text_2"]};margin:14px 0 12px;line-height:1.6;">'
+            f'<div style="font-size:var(--fs-2);color:{T["text_2"]};margin:14px 0 12px;line-height:1.6;">'
             f'Classify an image and apply the matched filter in one call.</div>',
             unsafe_allow_html=True,
         )
@@ -1980,7 +2134,7 @@ def page_api(cfg) -> None:
         ), unsafe_allow_html=True)
 
         st.markdown(
-            f'<div style="font-size:13px;color:{T["text_2"]};margin:20px 0 12px;line-height:1.6;">'
+            f'<div style="font-size:var(--fs-2);color:{T["text_2"]};margin:20px 0 12px;line-height:1.6;">'
             f'With a trained classifier and a clean reference, so quality is measurable.</div>',
             unsafe_allow_html=True,
         )
@@ -2011,6 +2165,7 @@ def page_api(cfg) -> None:
                 ['<span style="font-family:var(--mono);color:'+T["text"]+';">resize</span>', "bool",
                  "Resize to the configured geometry first. Off by default."],
             ],
+            flex_col=2,
         ), unsafe_allow_html=True)
         st.markdown(
             alert("Exactly one of noise_class or classifier",
@@ -2036,7 +2191,7 @@ def page_api(cfg) -> None:
             "}"
         ), unsafe_allow_html=True)
         st.markdown(
-            f'<div style="font-size:13px;color:{T["text_2"]};margin-top:14px;line-height:1.65;">'
+            f'<div style="font-size:var(--fs-2);color:{T["text_2"]};margin-top:14px;line-height:1.65;">'
             f'<code>metrics</code> is <code>None</code> whenever no reference was given, and '
             f'<code>metrics_note</code> then explains why. <code>confidence</code> is <code>None</code> '
             f'for a manual class rather than <code>1.0</code> — recording certainty nobody measured '
@@ -2101,14 +2256,12 @@ def page_settings(cfg, ds, hw, clf_ready: bool) -> None:
 
     with t1:
         st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
-        st.markdown(
-            f'<div style="font-size:14px;font-weight:600;color:{T["text"]};margin-bottom:3px;">'
-            f'Classification</div>', unsafe_allow_html=True)
+        st.markdown(group_label("Classification", first=True), unsafe_allow_html=True)
         if clf_ready:
             ss.use_ai = st.toggle("Classify noise automatically", value=ss.use_ai,
                                   help="Off: choose the noise class by hand on every run.")
             st.markdown(
-                f'<div style="font-size:12.5px;color:{T["text_3"]};margin:-6px 0 20px;">'
+                f'<div style="font-size:var(--fs-1);color:{T["text_3"]};margin:-6px 0 20px;">'
                 f'When off, every run asks you to pick the class and reports no confidence.</div>',
                 unsafe_allow_html=True)
         else:
@@ -2119,13 +2272,11 @@ def page_settings(cfg, ds, hw, clf_ready: bool) -> None:
                       "must be chosen manually on each run.", "warning"),
                 unsafe_allow_html=True)
 
-        st.markdown(
-            f'<div style="font-size:14px;font-weight:600;color:{T["text"]};margin:20px 0 3px;">'
-            f'Display</div>', unsafe_allow_html=True)
+        st.markdown(group_label("Display"), unsafe_allow_html=True)
         ss.dev_mode = st.toggle("Developer mode", value=ss.dev_mode,
                                 help="Reveals RTL control codes, kernel parameters and per-stage timings.")
         st.markdown(
-            f'<div style="font-size:12.5px;color:{T["text_3"]};margin:-6px 0 0;">'
+            f'<div style="font-size:var(--fs-1);color:{T["text_3"]};margin:-6px 0 0;">'
             f'Adds a pipeline-detail panel to results and parameter readouts to the analysis step.</div>',
             unsafe_allow_html=True)
 
@@ -2140,7 +2291,7 @@ def page_settings(cfg, ds, hw, clf_ready: bool) -> None:
         a, b = st.columns(2, gap="medium")
         with a:
             st.markdown(card(
-                f'<div style="font-size:13px;font-weight:600;color:{T["text"]};margin-bottom:12px;">Selection</div>'
+                card_title('Selection')
                 + kv_rows([
                     ("Confidence threshold", f"{cfg.confidence.threshold:.2f}"),
                     ("Fallback filter", _flabel(cfg.confidence.fallback)),
@@ -2151,7 +2302,7 @@ def page_settings(cfg, ds, hw, clf_ready: bool) -> None:
         with b:
             nv = cfg.filters.wiener.noise_variance
             st.markdown(card(
-                f'<div style="font-size:13px;font-weight:600;color:{T["text"]};margin-bottom:12px;">Filters</div>'
+                card_title('Filters')
                 + kv_rows([
                     ("Median kernel", f"{cfg.filters.median.kernel_size}×{cfg.filters.median.kernel_size}"),
                     ("Gaussian kernel", f"{cfg.filters.gaussian.kernel_size}×{cfg.filters.gaussian.kernel_size}"),
@@ -2163,8 +2314,7 @@ def page_settings(cfg, ds, hw, clf_ready: bool) -> None:
     with t3:
         st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
         st.markdown(card(
-            f'<div style="font-size:13px;font-weight:600;color:{T["text"]};margin-bottom:12px;">'
-            f'From configs/hardware.yaml</div>'
+            card_title('From configs/hardware.yaml')
             + kv_rows([
                 ("Pixel width", f"{hw.stream.pixel_width}-bit"),
                 ("Frame", f"{hw.stream.image_width}×{hw.stream.image_height}"),
@@ -2178,9 +2328,9 @@ def page_settings(cfg, ds, hw, clf_ready: bool) -> None:
     with t4:
         st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
         st.markdown(card(
-            f'<div style="font-size:14px;font-weight:600;color:{T["text"]};margin-bottom:6px;">'
+            f'<div style="font-size:var(--fs-3);font-weight:600;color:{T["text"]};margin-bottom:6px;">'
             f'AdaptiveDenoise</div>'
-            f'<div style="font-size:13px;color:{T["text_2"]};line-height:1.7;">'
+            f'<div style="font-size:var(--fs-2);color:{T["text_2"]};line-height:1.7;">'
             f'Adaptive image denoising: a CNN classifies the noise present, and the matched filter '
             f'(median, Gaussian or Wiener) is applied. The same filter selection is implemented in '
             f'SystemVerilog for FPGA acceleration, encoded as a 2-bit control code.</div>'
