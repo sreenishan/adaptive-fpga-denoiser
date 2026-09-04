@@ -89,9 +89,26 @@ generation, splitting, manifest).
 Done additionally: phase 5 (preprocessing), phases 9-10 (filters, selector),
 phase 12 (metrics), phase 11 (pipeline), and the Streamlit app (spec 39).
 
-Next up: phases 6-8, the CNN classifier — needs PyTorch, which is NOT installed.
-It plugs into `process_image(classifier=...)`; nothing else changes, and the app
-picks it up without edits.
+Done: phases 6-8, the CNN classifier. `src/denoising/model/` holds the network
+(`cnn.py`), training (`train.py`, `train_cli.py`) and inference
+(`inference.py`); `scripts/train.py` drives it and `tests/python/test_model.py`
+covers architecture, class weighting, early stopping, checkpoint contents and
+prediction. It plugs into `process_image(classifier=...)` exactly as planned —
+nothing else changed and the app picked it up without edits.
+
+**PyTorch is installed** (2.13.0+cpu) and `models/checkpoints/best_model.pt` is
+a real trained checkpoint, so the app reports a loaded classifier rather than
+falling back to manual selection. It stays out of `requirements.txt` on purpose:
+~2 GB exceeds Streamlit Community Cloud's install budget, and the app degrades
+gracefully to manual classification when it is absent. That is why the deployed
+build shows "Manual" where this machine shows "CNN" — not a bug.
+
+Next up: synthesis. Every module in `rtl/` is written and its testbench passes
+against the Python golden model, but `configs/hardware.yaml` names no vendor or
+device and **no board has been programmed**, so every figure in
+`docs/hardware.md` is `TBD`. Those tables get filled from a real toolchain run
+or not at all — timing, utilisation and power are measurements, and a plausible
+number in that table would be indistinguishable from a measured one.
 
 ## The filters are a contract with the hardware
 
