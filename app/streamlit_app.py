@@ -18,9 +18,8 @@ This UI shows measured values or it shows nothing. Specifically:
     metrics=None and the UI says why (see PipelineResult.metrics_note).
   · Confidence is the classifier's or it is absent. A manual choice shows
     "n/a", never 100%.
-  · Surfaces with no backend (Projects, Billing) state that plainly instead
-    of rendering fabricated records, and expose no control that pretends to
-    perform an action it cannot.
+  · No control pretends to perform an action it cannot, and no surface is
+    listed in the navigation unless this build can actually serve it.
 """
 
 from __future__ import annotations
@@ -656,12 +655,10 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
 ICONS = {
     "dashboard": '<rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/>',
     "process":   '<path d="M20.5 14.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9.5"/><circle cx="8.5" cy="9" r="1.8"/><path d="M3 16.5l4.2-4.2a1.8 1.8 0 0 1 2.5 0l3.6 3.6"/><path d="M18.5 16v6M15.5 19h6"/>',
-    "projects":  '<path d="M21 19V9a1.8 1.8 0 0 0-1.8-1.8h-6.4L10.6 5H4.8A1.8 1.8 0 0 0 3 6.8V19a1.8 1.8 0 0 0 1.8 1.8h14.4A1.8 1.8 0 0 0 21 19z"/>',
     "history":   '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 1.9"/>',
     "fpga":      '<rect x="7" y="7" width="10" height="10" rx="1.5"/><rect x="10.5" y="10.5" width="3" height="3" rx=".6"/><path d="M9.5 3v4M14.5 3v4M9.5 17v4M14.5 17v4M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/>',
     "api":       '<path d="M15.5 17.5 21 12l-5.5-5.5"/><path d="M8.5 6.5 3 12l5.5 5.5"/>',
     "analytics": '<path d="M3.5 20.5h17"/><path d="M6.8 20.5v-5.2M12 20.5V8.8M17.2 20.5V4.5"/>',
-    "billing":   '<rect x="2.8" y="5.2" width="18.4" height="13.6" rx="2.2"/><path d="M2.8 10h18.4"/><path d="M6.5 14.6h3"/>',
     "settings":  '<path d="M5 8.5h14M5 15.5h14"/><circle cx="9.5" cy="8.5" r="2.2"/><circle cx="15" cy="15.5" r="2.2"/>',
     # utility
     "image":     '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="m3 16.5 4.5-4.5a1.8 1.8 0 0 1 2.5 0L21 21"/>',
@@ -1232,12 +1229,16 @@ def reset_wizard() -> None:
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════════════════════
 
+# Projects and Billing were removed. Both were permanent dead ends — no
+# database to group runs in, no account system to bill against — so they were
+# two of nine nav items that could never do anything. Their pages said so
+# honestly, but a navigation entry is a promise that something is there.
 NAV_GROUPS = [
     ("Primary",        [("Dashboard", "dashboard"), ("New Processing", "process"),
-                        ("Projects", "projects"), ("Processing History", "history")]),
+                        ("Processing History", "history")]),
     ("Infrastructure", [("FPGA Devices", "fpga"), ("API", "api")]),
     ("Insights",       [("Analytics", "analytics")]),
-    ("Account",        [("Billing", "billing"), ("Settings", "settings")]),
+    ("Account",        [("Settings", "settings")]),
 ]
 
 
@@ -2316,46 +2317,6 @@ def page_api(cfg) -> None:
 # PAGE · PROJECTS  /  BILLING   (no backend — stated, not faked)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def page_projects() -> None:
-    st.markdown(
-        page_head("Projects", "Group related images and processing runs.", ["Primary", "Projects"]),
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        empty("projects", "Projects are not available in this build",
-              "Projects need somewhere to persist. This application keeps no database — runs live in "
-              "session memory and are lost when the server restarts — so there is nothing to group and "
-              "no project to list.",
-              "Runs are still tracked for the current session under <b>Processing History</b>."),
-        unsafe_allow_html=True,
-    )
-
-
-def page_billing() -> None:
-    st.markdown(
-        page_head("Billing", "Plan, usage and invoices.", ["Account", "Billing"]),
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        alert("No billing backend",
-              "This is a local research build with no account system, metering or payment provider. "
-              "Showing a plan, a quota bar or an invoice list here would be inventing records — so "
-              "none are shown.", "info"),
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        empty("billing", "Nothing to bill",
-              "There is no subscription, no usage meter and no payment method associated with this "
-              "installation. Processing runs locally on your own CPU at no metered cost.",
-              "Session run counts are visible on the <b>Dashboard</b> and in <b>Analytics</b>."),
-        unsafe_allow_html=True,
-    )
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# PAGE · SETTINGS
-# ═══════════════════════════════════════════════════════════════════════════
-
 def page_settings(cfg, ds, hw, clf_ready: bool) -> None:
     ss = st.session_state
     st.markdown(
@@ -2475,8 +2436,6 @@ def main() -> None:
         page_dashboard(cfg, ds, hw, clf_ready)
     elif nav == "New Processing":
         page_processing(cfg, ds, clf, clf_ready)
-    elif nav == "Projects":
-        page_projects()
     elif nav == "Processing History":
         page_history()
     elif nav == "FPGA Devices":
@@ -2485,10 +2444,15 @@ def main() -> None:
         page_api(cfg)
     elif nav == "Analytics":
         page_analytics()
-    elif nav == "Billing":
-        page_billing()
     elif nav == "Settings":
         page_settings(cfg, ds, hw, clf_ready)
+    else:
+        # No branch matched. Previously this fell through and rendered a page
+        # with a sidebar and no content — reachable whenever a live session
+        # held a nav value the running code no longer serves, which is exactly
+        # what removing a nav entry does to anyone sitting on that page.
+        st.session_state.nav = "Dashboard"
+        page_dashboard(cfg, ds, hw, clf_ready)
 
 
 import traceback as _tb
