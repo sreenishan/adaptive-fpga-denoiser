@@ -375,8 +375,14 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
 }}
 [data-testid="stTab"]:hover {{ color: var(--text-2) !important; background: rgba(0,201,167,.04) !important; }}
 [data-testid="stTab"][aria-selected="true"] {{ color: var(--accent-hi) !important; font-weight:600 !important; }}
-[data-testid="stTabs"] [data-baseweb="tab-highlight"],
-[data-testid="stTabs"] [class*="Highlight"] {{ background: var(--accent) !important; height:2px !important; }}
+/* The active-tab indicator. The rule here used to target
+   [data-baseweb="tab-highlight"], which this build does not render — so the
+   selected tab was distinguished by colour alone. Drawn from aria-selected
+   instead: an ARIA state is part of the accessibility contract and does not
+   churn between Streamlit releases the way an internal class does. */
+[data-testid="stTab"][aria-selected="true"] {{
+  box-shadow: inset 0 -2px 0 0 var(--accent);
+}}
 
 /* ══ EXPANDER ══ */
 [data-testid="stExpander"] {{
@@ -775,9 +781,18 @@ def kpi(icon: str, label: str, value: str, sub: str, color: str = None) -> str:
     )
 
 
-def card(body: str, pad: str = "20px", extra: str = "", interactive: bool = False) -> str:
+def card(body: str, pad: str = "20px", extra: str = "", interactive: bool = False,
+         max_w: int | None = None) -> str:
+    """A surface panel.
+
+    `max_w` caps the width for read-only key/value panels. A settings card left
+    to fill a 1100px column puts its label at the far left and its value at the
+    far right, so the eye crosses ~600px of nothing to pair the two. Reading
+    columns want a bound; grids and tables do not, so this is opt-in.
+    """
     cls = "card card-i" if interactive else "card"
-    return f'<div class="{cls}" style="padding:{pad};{extra}">{body}</div>'
+    width = f"max-width:{max_w}px;" if max_w else ""
+    return f'<div class="{cls}" style="padding:{pad};{width}{extra}">{body}</div>'
 
 
 def alert(title: str, body: str, kind: str = "info") -> str:
@@ -2411,16 +2426,17 @@ def page_settings(cfg, ds, hw, clf_ready: bool) -> None:
                 ("Boundary policy", hw.stream.boundary_policy),
                 ("Back-pressure", "enabled" if hw.stream.backpressure else "disabled"),
                 ("Simulator", hw.simulation.simulator),
-                ("Synthesis vendor", hw.synthesis.vendor or "not set"),
-                ("Synthesis device", hw.synthesis.device or "not set"),
-            ])), unsafe_allow_html=True)
+                ("Synthesis vendor", esc(hw.synthesis.vendor) if hw.synthesis.vendor
+                 else badge("Not set", T["warn"], dot=True)),
+                ("Synthesis device", esc(hw.synthesis.device) if hw.synthesis.device
+                 else badge("Not set", T["warn"], dot=True)),
+            ]), max_w=640), unsafe_allow_html=True)
 
     with t4:
         st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
         st.markdown(card(
-            f'<div style="font-size:var(--fs-3);font-weight:600;color:{T["text"]};margin-bottom:6px;">'
-            f'AdaptiveDenoise</div>'
-            f'<div style="font-size:var(--fs-2);color:{T["text_2"]};line-height:1.7;">'
+            card_title('AdaptiveDenoise')
+            + f'<div style="font-size:var(--fs-2);color:{T["text_2"]};line-height:1.7;">'
             f'Adaptive image denoising: a CNN classifies the noise present, and the matched filter '
             f'(median, Gaussian or Wiener) is applied. The same filter selection is implemented in '
             f'SystemVerilog for FPGA acceleration, encoded as a 2-bit control code.</div>'
@@ -2430,7 +2446,7 @@ def page_settings(cfg, ds, hw, clf_ready: bool) -> None:
                 ("Filters", ", ".join(FILTER_META[f][1] for f in FILTER_META)),
                 ("RTL modules", f"{len(rtl_inventory())} on disk"),
                 ("Compute", "CPU — no FPGA board attached"),
-            ])), unsafe_allow_html=True)
+            ]), max_w=640), unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
