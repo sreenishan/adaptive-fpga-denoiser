@@ -218,8 +218,15 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
   width: 256px !important; min-width: 256px !important; max-width: 256px !important;
   flex: 0 0 256px !important;
 }}
-/* the drag-to-resize handle is noise on a fixed-width rail */
-[data-testid="stSidebar"] [data-testid="stSidebarResizeHandle"] {{ display: none !important; }}
+/* The drag-to-resize handle is a control that cannot do anything: the rail is
+   pinned to a fixed width with !important above, so a drag is overridden the
+   moment it lands. It carries NO data-testid in this build, so the rule that
+   named stSidebarResizeHandle matched nothing and the handle stayed live.
+   Selected instead as the sidebar's one direct child that is not the content
+   wrapper — structural, and it survives an emotion-class rename. */
+[data-testid="stSidebar"] > div:not([data-testid="stSidebarContent"]) {{
+  display: none !important;
+}}
 [data-testid="stSidebar"] > div:first-child {{ padding-top: 0 !important; }}
 [data-testid="stSidebar"] p,
 [data-testid="stSidebar"] span:not(.nav-label):not(.sb),
