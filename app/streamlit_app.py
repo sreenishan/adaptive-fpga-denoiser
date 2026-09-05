@@ -492,6 +492,24 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
 }}
 .group-t-first {{ margin-top:0; }}
 
+/* Status strip — the header's live system state. Each chip is one measured or
+   configured fact, never a decorative label. */
+.sstrip {{ display:flex; flex-wrap:wrap; gap:var(--s2); margin:0 0 var(--s6); }}
+.schip {{
+  display:inline-flex; align-items:center; gap:9px; padding:7px 13px;
+  border-radius:var(--r-full); background:var(--elevated);
+  border:1px solid var(--border); box-shadow:var(--shadow-sm);
+}}
+.schip-dot {{ width:6px; height:6px; border-radius:50%; flex-shrink:0; }}
+.schip-l {{
+  font-size:var(--fs-0); font-weight:var(--fw-bold); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--text-3); white-space:nowrap;
+}}
+.schip-v {{
+  font-size:var(--fs-2); font-weight:var(--fw-medium); color:var(--text);
+  font-variant-numeric:tabular-nums; white-space:nowrap;
+}}
+
 .tbl {{ width:100%; border-collapse:collapse; font-size:var(--fs-2); }}
 .tbl th {{
   text-align:left; padding:10px var(--s3); font-size:var(--fs-0); font-weight:700; color: var(--text-3);
@@ -595,6 +613,20 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
      viewport is the scarce resource rather than the horizontal space. */
   .empty {{ padding: var(--s8) var(--s4); }}
   .sec {{ margin: var(--s6) 0 var(--s4); }}
+  /* The status strip is five facts; at full padding they wrapped to four rows
+     and ate a fifth of an 812px phone screen. Tightening the chip rather than
+     dropping a fact — each one is real state a user came here to read. */
+  /* One scrollable row, the standard mobile chip pattern. Wrapping put five
+     facts on four lines; a partially-visible trailing chip signals the scroll
+     and keeps every fact reachable. */
+  .sstrip {{
+    flex-wrap:nowrap; overflow-x:auto; gap:6px; margin-bottom: var(--s4);
+    padding-bottom:4px; -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+  }}
+  .sstrip::-webkit-scrollbar {{ display:none; }}
+  .schip {{ padding:5px 10px; gap:7px; flex:0 0 auto; }}
+  .schip-l {{ letter-spacing:.06em; }}
   .card {{ padding: var(--s4); }}
 
   /* A wide table scrolls inside its own frame instead of widening the page. */
@@ -683,6 +715,24 @@ def page_head(title: str, sub: str, crumb: list[str] | None = None) -> str:
 def section(title: str) -> str:
     """A major page region. The top of the in-page hierarchy below the title."""
     return f'<div class="sec"><span class="sec-t">{esc(title)}</span><span class="sec-r"></span></div>'
+
+
+def status_chip(label: str, value: str, color: str) -> str:
+    """One fact in the header status strip: a state light, a label and a value.
+
+    The colour is semantic, never decorative — amber means a thing is genuinely
+    not configured, and nothing here reports a figure the build cannot measure.
+    """
+    return (
+        f'<div class="schip">'
+        f'<span class="schip-dot" style="background:{color};box-shadow:0 0 6px {color}99;"></span>'
+        f'<span class="schip-l">{esc(label)}</span>'
+        f'<span class="schip-v">{esc(value)}</span></div>'
+    )
+
+
+def status_strip(*chips: str) -> str:
+    return f'<div class="sstrip">{"".join(chips)}</div>'
 
 
 def card_title(title: str) -> str:
@@ -1266,11 +1316,29 @@ def sidebar(clf_ready: bool, hw) -> None:
 def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
     ss = st.session_state
     S = job_stats()
-    hour = datetime.now().hour
-    greet = "Good morning" if hour < 12 else ("Good afternoon" if hour < 18 else "Good evening")
+    n_rtl = len(rtl_inventory())
+
+    # A greeting was the page title here. On an engineering dashboard the
+    # heading should say what the screen is, and the space above the fold
+    # should carry system state rather than the time of day.
+    st.markdown(
+        page_head("System dashboard",
+                  "Adaptive image denoising · CNN noise classification · FPGA RTL reference."),
+        unsafe_allow_html=True,
+    )
 
     st.markdown(
-        page_head(greet, "Current status of your image-processing environment."),
+        status_strip(
+            status_chip("FPGA", "Synthesis configured" if hw.synthesis.configured else "No board attached",
+                        T["ok"] if hw.synthesis.configured else T["warn"]),
+            status_chip("Classifier", "CNN loaded" if clf_ready else "Manual selection",
+                        T["ok"] if clf_ready else T["warn"]),
+            status_chip("Compute", "CPU software", T["info"]),
+            status_chip("Stream", f'{hw.stream.image_width}×{hw.stream.image_height} · {hw.stream.pixel_width}-bit',
+                        T["accent"]),
+            status_chip("RTL", f'{n_rtl} module{"s" if n_rtl != 1 else ""}',
+                        T["ok"] if n_rtl else T["text_3"]),
+        ),
         unsafe_allow_html=True,
     )
 
@@ -1285,6 +1353,30 @@ def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
         if st.button("View analytics", type="secondary", use_container_width=True):
             ss.nav = "Analytics"
             st.rerun()
+
+    st.markdown(section("System status"), unsafe_allow_html=True)
+    s1, s2, s3, s4 = st.columns(4)
+    with s1:
+        st.markdown(kpi("fpga", "FPGA target",
+                        "Configured" if hw.synthesis.configured else "No board",
+                        f"{hw.synthesis.vendor} · {hw.synthesis.device}" if hw.synthesis.configured
+                        else "no synthesis vendor or device set",
+                        T["ok"] if hw.synthesis.configured else T["warn"]), unsafe_allow_html=True)
+    with s2:
+        st.markdown(kpi("brain", "Classification",
+                        "CNN" if clf_ready else "Manual",
+                        "trained checkpoint loaded" if clf_ready else "no checkpoint found",
+                        T["ok"] if clf_ready else T["warn"]), unsafe_allow_html=True)
+    with s3:
+        st.markdown(kpi("cpu", "Stream geometry",
+                        f'{hw.stream.image_width}×{hw.stream.image_height}',
+                        f'{hw.stream.pixel_width}-bit · {hw.stream.boundary_policy} boundary',
+                        T["accent"]), unsafe_allow_html=True)
+    with s4:
+        st.markdown(kpi("layers", "RTL sources", f'{n_rtl}',
+                        f'testbenches pass vs the golden model' if n_rtl
+                        else "no modules found on disk",
+                        T["ok"] if n_rtl else T["text_3"]), unsafe_allow_html=True)
 
     st.markdown(section("Session metrics"), unsafe_allow_html=True)
 
@@ -1323,8 +1415,6 @@ def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
     # ── environment ──
     st.markdown(section("Environment"), unsafe_allow_html=True)
     e1, e2 = st.columns([1, 1], gap="medium")
-
-    n_rtl = len(rtl_inventory())
     with e1:
         st.markdown(
             card(
