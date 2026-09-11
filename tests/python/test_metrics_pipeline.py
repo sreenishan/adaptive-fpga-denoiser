@@ -254,7 +254,7 @@ def test_the_right_filter_improves_psnr(
 
 def test_timings_are_recorded(clean: np.ndarray, inference: cfg.InferenceConfig) -> None:
     result = process_image(clean, inference, noise_class="gaussian")
-    assert set(result.timings_ms) == {"preprocess", "classify", "filter", "total"}
+    assert set(result.timings_ms) == {"preprocess", "classify", "severity", "filter", "total"}
     assert all(value >= 0.0 for value in result.timings_ms.values())
 
 

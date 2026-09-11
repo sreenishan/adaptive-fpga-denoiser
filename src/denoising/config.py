@@ -567,6 +567,58 @@ class ConfidenceConfig:
 
 
 @dataclass(frozen=True)
+class SeverityBand:
+    """Two cut points splitting one class's severity estimate into three levels.
+
+    Below ``medium_from`` is low, below ``high_from`` is medium, the rest high.
+    """
+
+    medium_from: float
+    high_from: float
+
+    @classmethod
+    def from_mapping(cls, data: Mapping[str, Any], where: str) -> "SeverityBand":
+        band = cls(
+            medium_from=_float(data, "medium_from", where, minimum=0.0),
+            high_from=_float(data, "high_from", where, minimum=0.0),
+        )
+        if not band.medium_from < band.high_from:
+            raise ConfigError(
+                f"'{where}.medium_from' ({band.medium_from}) must be below "
+                f"'{where}.high_from' ({band.high_from}); otherwise medium is empty"
+            )
+        return band
+
+
+@dataclass(frozen=True)
+class SeverityConfig:
+    """Noise-severity estimation. One band per noisy class; clean has none."""
+
+    enabled: bool
+    salt_pepper: SeverityBand
+    gaussian: SeverityBand
+    speckle: SeverityBand
+
+    def band(self, noise_class: str) -> SeverityBand:
+        return getattr(self, noise_class)
+
+    @classmethod
+    def from_mapping(cls, data: Mapping[str, Any], where: str = "severity") -> "SeverityConfig":
+        return cls(
+            enabled=_bool(data, "enabled", where),
+            salt_pepper=SeverityBand.from_mapping(
+                _section(data, "salt_pepper", where), f"{where}.salt_pepper"
+            ),
+            gaussian=SeverityBand.from_mapping(
+                _section(data, "gaussian", where), f"{where}.gaussian"
+            ),
+            speckle=SeverityBand.from_mapping(
+                _section(data, "speckle", where), f"{where}.speckle"
+            ),
+        )
+
+
+@dataclass(frozen=True)
 class EvaluationConfig:
     """Image-quality evaluation settings."""
 
@@ -595,6 +647,7 @@ class InferenceConfig:
     device: str
     image: ImageConfig
     confidence: ConfidenceConfig
+    severity: SeverityConfig
     filters: FiltersConfig
     evaluation: EvaluationConfig
 
@@ -607,6 +660,7 @@ class InferenceConfig:
             device=_choice(data, "device", "", _DEVICES),
             image=ImageConfig.from_mapping(_section(data, "image", "")),
             confidence=ConfidenceConfig.from_mapping(_section(data, "confidence", "")),
+            severity=SeverityConfig.from_mapping(_section(data, "severity", "")),
             filters=FiltersConfig.from_mapping(_section(data, "filters", "")),
             evaluation=EvaluationConfig.from_mapping(_section(data, "evaluation", ""), root=root),
         )

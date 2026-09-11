@@ -24,12 +24,18 @@ from .gaussian import (
     gaussian_filter,
     gaussian_kernel,
 )
+from .adaptive_median import adaptive_median_filter
 from .median import median_filter
 from .selector import (
+    ALL_FILTERS,
     CONTROL_CODE,
     FILTER_FOR_CLASS,
     FILTERS,
+    SEVERITY_LEVELS,
+    SEVERITY_POLICY,
+    SOFTWARE_FILTERS,
     FilterDecision,
+    FilterStep,
     control_code,
     decide_filter,
     select_filter,
@@ -37,6 +43,12 @@ from .selector import (
 from .wiener import estimate_noise_variance, wiener_filter
 
 __all__ = [
+    "ALL_FILTERS",
+    "SEVERITY_LEVELS",
+    "SEVERITY_POLICY",
+    "SOFTWARE_FILTERS",
+    "FilterStep",
+    "adaptive_median_filter",
     "BINOMIAL_DIVISOR_3X3",
     "BINOMIAL_EFFECTIVE_SIGMA",
     "BINOMIAL_KERNEL_3X3",
@@ -64,17 +76,17 @@ def apply_filter(image, filter_name: str, **parameters):
 
     Args:
         image: 2-D uint8 grayscale image.
-        filter_name: One of :data:`FILTERS`. ``"bypass"`` returns a copy — the
-            clean class is a real decision to do nothing, not a missing case.
+        filter_name: One of :data:`ALL_FILTERS`. ``"bypass"`` returns a copy —
+            the clean class is a real decision to do nothing, not a missing case.
         **parameters: Passed to the chosen filter (``kernel_size``, ``sigma``,
-            ``noise_variance``). Parameters that do not apply are ignored, so
-            one configuration block can drive all four branches.
+            ``noise_variance``, ``max_size``). Parameters that do not apply are
+            ignored, so one configuration block can drive every branch.
 
     Returns:
         A new uint8 array.
 
     Raises:
-        ValueError: if *filter_name* is not one of :data:`FILTERS`.
+        ValueError: if *filter_name* is not one of :data:`ALL_FILTERS`.
     """
     from ..noise._common import validate_image
 
@@ -94,4 +106,6 @@ def apply_filter(image, filter_name: str, **parameters):
         )
     if filter_name == "wiener":
         return wiener_filter(image, kernel_size, parameters.get("noise_variance"))
-    raise ValueError(f"unknown filter {filter_name!r}; expected one of {FILTERS}")
+    if filter_name == "adaptive_median":
+        return adaptive_median_filter(image, parameters.get("max_size", 7))
+    raise ValueError(f"unknown filter {filter_name!r}; expected one of {ALL_FILTERS}")

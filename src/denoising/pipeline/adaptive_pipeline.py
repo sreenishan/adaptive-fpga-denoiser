@@ -1,7 +1,7 @@
 """The end-to-end adaptive pipeline (spec section 16).
 
 ```text
-input -> preprocess -> classify -> select filter -> filter -> result
+input -> preprocess -> classify -> severity -> select filter -> filter -> result
 ```
 
 One call, :func:`process_image`, joins the pieces the rest of the package
@@ -35,6 +35,7 @@ from ..filters.selector import FilterDecision
 from ..metrics.image_quality import ImageQuality, calculate_quality
 from ..noise._common import GrayImage, validate_image
 from ..preprocessing import preprocess
+from ..severity import Severity, estimate_severity
 
 __all__ = ["NoiseClassifier", "PipelineResult", "process_image"]
 
@@ -69,6 +70,10 @@ class PipelineResult:
         noisy_metrics: Quality of the *input* against the reference, so the
             improvement the filter made can be stated rather than implied.
         timings_ms: Wall-clock milliseconds for each stage.
+        severity: The measured noise severity, or ``None`` for a clean image or
+            with severity disabled. Reported even when the low-confidence
+            fallback overrode it — the measurement happened; the decision
+            records separately that it was not acted on.
     """
 
     noise_class: str
@@ -81,6 +86,7 @@ class PipelineResult:
     metrics_note: str | None = None
     noisy_metrics: ImageQuality | None = None
     timings_ms: Mapping[str, float] = field(default_factory=dict)
+    severity: Severity | None = None
 
     @property
     def psnr_improvement(self) -> float | None:
@@ -105,6 +111,16 @@ class PipelineResult:
             "selected_filter": self.selected_filter,
             "used_fallback": self.decision.used_fallback,
             "control_code": self.decision.control_code,
+            "passes": self.decision.passes,
+            "hardware": self.decision.hardware,
+            "severity": None
+            if self.severity is None
+            else {
+                "level": self.severity.level,
+                "metric": self.severity.metric,
+                "metric_name": self.severity.metric_name,
+                "applied": self.decision.severity is not None,
+            },
             "metrics": None
             if self.metrics is None
             else {
@@ -134,6 +150,8 @@ def _filter_parameters(config: InferenceConfig, filter_name: str) -> dict[str, A
             "kernel_size": filters.wiener.kernel_size,
             "noise_variance": filters.wiener.noise_variance,
         }
+    if filter_name == "adaptive_median":
+        return {"max_size": 7}
     return {}
 
 
@@ -197,17 +215,23 @@ def process_image(
             )
     timings["classify"] = (time.perf_counter() - started) * 1000.0
 
+    started = time.perf_counter()
+    severity = estimate_severity(working, predicted, config.severity)
+    timings["severity"] = (time.perf_counter() - started) * 1000.0
+
     decision = decide_filter(
         predicted,
         confidence,
         threshold=config.confidence.threshold,
         fallback=config.confidence.fallback,
+        severity=None if severity is None else severity.level,
     )
 
     started = time.perf_counter()
-    output = apply_filter(
-        working, decision.filter_name, **_filter_parameters(config, decision.filter_name)
-    )
+    parameters = _filter_parameters(config, decision.filter_name)
+    output = working
+    for _ in range(decision.passes):
+        output = apply_filter(output, decision.filter_name, **parameters)
     timings["filter"] = (time.perf_counter() - started) * 1000.0
     timings["total"] = sum(timings.values())
 
@@ -242,4 +266,5 @@ def process_image(
         metrics_note=note,
         noisy_metrics=noisy_metrics,
         timings_ms=timings,
+        severity=severity,
     )

@@ -14,6 +14,24 @@ confidence:
   threshold: 0.60
   fallback: bypass        # bypass | median | gaussian | wiener
 
+# Noise severity (stage 4). Each noisy class measures its own quantity from the
+# noisy image alone — no reference is needed — and two cut points split it into
+# low / medium / high. The cut points are midpoints between the dataset's three
+# generation levels in estimate space, and classify 360/360 held-out images per
+# class correctly. The level then picks a filter and pass count from
+# SEVERITY_POLICY in src/denoising/filters/selector.py.
+severity:
+  enabled: true
+  salt_pepper:            # impulse fraction: share of pixels that are 0/255 outliers
+    medium_from: 0.035    # dataset levels 0.02 / 0.05 / 0.10
+    high_from: 0.075
+  gaussian:               # noise sigma / 255 (Immerkaer estimator)
+    medium_from: 0.045    # dataset levels 0.03 / 0.06 / 0.10
+    high_from: 0.08
+  speckle:                # noise sigma / mean intensity (~ sqrt of speckle variance)
+    medium_from: 0.20     # dataset variances 0.03 / 0.06 / 0.10 -> 0.17 / 0.24 / 0.31
+    high_from: 0.27
+
 filters:
   boundary_mode: replicate  # must match the RTL boundary policy for verification
   median:
