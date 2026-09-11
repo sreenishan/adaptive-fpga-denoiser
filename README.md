@@ -79,8 +79,8 @@ results/              generated reports (classifier, denoising, rtl, hardware)
 docs/                 architecture, algorithm, verification, hardware, results
 ```
 
-The split is deliberate: nothing under `rtl/common`, `rtl/filters`,
-`rtl/control` or `rtl/top` may name a vendor primitive or a board. Anything
+The split is deliberate: nothing in `rtl/` may name a vendor primitive or a
+board. Anything
 board-specific lives under `fpga/`.
 
 ## Requirements

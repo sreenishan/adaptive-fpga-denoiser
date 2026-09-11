@@ -70,14 +70,15 @@ the first resizes and normalises, the second must not.
 | `src/denoising/noise/` | salt-pepper, Gaussian, speckle generators | done |
 | `src/denoising/dataset/` | sources, generation, split, manifest | done |
 | `src/denoising/dataset/loader.py` | training-time loading | planned |
-| `src/denoising/model/` | CNN, train, evaluate, inference | planned |
+| `src/denoising/model/` | CNN, train, evaluate, inference | done |
+| `src/denoising/severity.py` | noise severity estimation (stage 4) | done |
 | `src/denoising/filters/` | median, Gaussian, Wiener, selector | done |
 | `src/denoising/pipeline/` | `process_image` end to end | done |
 | `src/denoising/metrics/` | MSE, PSNR, SSIM | done |
 | `src/denoising/preprocessing.py` | CNN input path | done |
 | `app/streamlit_app.py` | demonstration UI (spec 39) | done |
-| `rtl/common/line_buffer.sv` | 3-line buffering | planned |
-| `rtl/common/window_3x3.sv` | 3x3 neighbourhood, edge replication | planned |
-| `rtl/filters/*.sv` | the three filters | planned |
-| `rtl/control/filter_controller.sv` | 2-bit class to filter select | planned |
-| `rtl/top/adaptive_denoiser_top.sv` | window, filters, MUX | planned |
+| `rtl/line_buffer.sv` | line buffering | simulated, matches golden |
+| `rtl/window_gen.sv` | 3x3 neighbourhood, edge replication | simulated, matches golden |
+| `rtl/median_filter.sv`, `gaussian_filter.sv`, `wiener_filter.sv` | the three filters | simulated, matches golden (see verification.md) |
+| `rtl/filter_controller.sv` | 2-bit code to filter select | simulated, matches golden |
+| `rtl/fpga_denoiser_top.sv` | window, filters, MUX, stream protocol | simulated at 224x224; not synthesised |

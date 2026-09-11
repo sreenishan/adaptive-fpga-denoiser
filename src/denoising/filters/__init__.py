@@ -1,10 +1,10 @@
 """Software reference filters and the filter selector (spec sections 14-15).
 
-These implementations are the **golden reference**: the RTL in ``rtl/filters/``
+These implementations are the **golden reference**: the RTL filters in ``rtl/``
 is verified against them pixel by pixel, not the other way round.
 
 All three operate on a 3x3 neighbourhood with **replicated edges**, the policy
-``rtl/common/window_3x3.sv`` implements. Two of them are exact integer
+``rtl/window_gen.sv`` implements. Two of them are exact integer
 arithmetic and are required to match the hardware bit for bit; the Wiener
 filter needs a division and is allowed one grey level.
 

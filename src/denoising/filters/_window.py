@@ -1,7 +1,7 @@
 """Neighbourhood extraction shared by every filter.
 
 This module is the software half of a contract with the hardware. The RTL
-window generator (``rtl/common/window_3x3.sv``, phase 17) must produce exactly
+window generator (``rtl/window_gen.sv``, phase 17) must produce exactly
 these neighbourhoods, including at the image border, or the golden-reference
 comparison in phase 24 measures the difference between two boundary policies
 and reports it as an RTL bug.

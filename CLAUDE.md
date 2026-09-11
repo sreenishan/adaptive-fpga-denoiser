@@ -18,8 +18,8 @@ needs; an FPGA performs the filtering. The Python implementation is the
    approximation, it is documented as one and its error against the reference is
    reported. Replacing it with something cheaper and still calling it Wiener is
    the failure mode this rule exists to prevent.
-4. **No board in the core RTL.** `rtl/common`, `rtl/filters`, `rtl/control` and
-   `rtl/top` are vendor-neutral. Constraints, camera and display code live under
+4. **No board in the core RTL.** Everything in `rtl/` (the modules listed in
+   `rtl/filelist.f`, plus the benches in `rtl/tb/`) is vendor-neutral. Constraints, camera and display code live under
    `fpga/`.
 5. **No absolute paths.** Everything resolves against the repository root via
    `denoising.config.PROJECT_ROOT`. A test asserts the configs contain none.
@@ -67,8 +67,11 @@ machine with no ML framework installed; a test asserts `torch` is absent from
 ## Toolchain in this environment
 
 Python 3.12.10 with numpy, opencv, scipy, scikit-image, scikit-learn, pandas,
-matplotlib, pyyaml, pytest. **No Icarus Verilog, Verilator, Vivado or Quartus on
-PATH** — do not claim a simulation ran.
+matplotlib, pyyaml, pytest. **Icarus Verilog 12.0 is installed at
+`C:/iverilog/bin`, but NOT on PATH** — `scripts/simulate_rtl.py` and
+`tests/rtl/test_rtl_cosim.py` find it there; for `rtl/tb/run_tb.sh` export
+`PATH="/c/iverilog/bin:$PATH"` first. No Verilator, Vivado or Quartus: nothing has
+been synthesised.
 
 PyTorch 2.13.0+cpu is installed, but as of 2026-09-11 **Windows Application
 Control blocks its DLL** (`import torch` -> "An Application Control policy has
@@ -113,21 +116,35 @@ Done: severity estimation (design stage 4) and severity-driven filter
 selection, adaptive median, single-frame camera input, and the seven-stage flow
 panel on the processing page. See the section on severity below.
 
-Next up: simulation, then synthesis. Every module in `rtl/` is written, and
-`tests/rtl/rtl_model.py` — a statement-for-statement Python transcription of it —
-matches the golden filters. **That is not simulation.** It cannot catch a syntax,
-elaboration or timing error, and the `rtl/tb/*.sv` testbenches have not been run
-by a simulator in any recorded result; never describe the RTL as simulated or
-"testbench-verified". `configs/hardware.yaml` names no vendor or device and
-**no board has been programmed**, so every figure in
-`docs/hardware.md` is `TBD`. Those tables get filled from a real toolchain run
-or not at all — timing, utilisation and power are measurements, and a plausible
-number in that table would be indistinguishable from a measured one.
+Done: RTL simulation (2026-09-11). All six `rtl/tb` unit benches pass in
+Icarus, each filter bench mutation-checked; three had never compiled because
+they drove a `win` port the flattened filters no longer have. The golden
+co-simulation (`scripts/simulate_rtl.py`) streams full 224x224 frames through
+`fpga_denoiser_top` and judges every pixel by the Python filters: 48/48 frames,
+median and Gaussian bit-exact on 602,112 pixels each, Wiener max 1 grey level.
+Results and method are in `docs/verification.md`; the small-frame version runs
+in pytest as `tests/rtl/test_rtl_cosim.py` and skips (never passes) without
+Icarus. Say "simulated against the golden model", never "verified on hardware".
+
+**Open design issue — the hardware Wiener is not the software Wiener.** The RTL
+fixes `NOISE_VAR = 100` at compile time; the pipeline estimates noise power per
+image (`noise_variance: null`). Co-simulation matches the RTL to the golden
+filter *at the same fixed value*, but that filter is up to 6.1 dB worse than the
+software one and differs by up to 109 grey levels. So `SEVERITY_POLICY`'s Wiener
+entries — measured with the estimated variance — describe the software pipeline,
+not what the FPGA would produce. Fixing it needs the noise power as a runtime
+RTL input; until then, do not present a software Wiener result as the FPGA's.
+
+Next up: synthesis. `configs/hardware.yaml` names no vendor or device and
+**no board has been programmed**, so every figure in `docs/hardware.md` is
+`TBD`. Those tables get filled from a real toolchain run or not at all —
+timing, utilisation and power are measurements, and a plausible number in that
+table would be indistinguishable from a measured one.
 
 ## The filters are a contract with the hardware
 
 All three read the same replicated-edge 3x3 window (`filters/_window.py`), which
-is the golden model for `rtl/common/window_3x3.sv`. Median and Gaussian are
+is the golden model for `rtl/window_gen.sv`. Median and Gaussian are
 exact integer arithmetic and must match the RTL **bit for bit**; Wiener needs a
 division and is allowed one grey level.
 

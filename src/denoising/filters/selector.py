@@ -2,7 +2,7 @@
 
 The mapping from noise class to filter lives **here and nowhere else**. It is
 read by the Python pipeline and it defines the 2-bit code sent to
-``rtl/control/filter_controller.sv``; a second copy somewhere else is how the
+``rtl/filter_controller.sv``; a second copy somewhere else is how the
 software and the hardware come to disagree about what "speckle" means while
 both look correct in isolation.
 
