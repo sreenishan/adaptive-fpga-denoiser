@@ -57,11 +57,18 @@ from denoising.noise import (  # noqa: E402
 from denoising.pipeline import process_image  # noqa: E402
 from denoising.preprocessing import to_grayscale  # noqa: E402
 
+# Why the classifier is unavailable, kept rather than discarded. "Not trained"
+# was the only thing the UI could say, and it was false whenever the checkpoint
+# existed but PyTorch itself failed to load — e.g. torch not installed on
+# Streamlit Cloud, or a Windows Application Control policy blocking its DLL.
+_CLASSIFIER_IMPORT_ERROR: str | None = None
+_CLASSIFIER_LOAD_ERROR: str | None = None
 try:
     from denoising.model.inference import load_classifier as _load_classifier
     _CLASSIFIER_AVAILABLE = True
-except ImportError:
+except ImportError as _exc:  # torch missing or blocked
     _CLASSIFIER_AVAILABLE = False
+    _CLASSIFIER_IMPORT_ERROR = f"{type(_exc).__name__}: {_exc}"
 
 st.set_page_config(
     page_title="AdaptiveDenoise",
@@ -117,7 +124,24 @@ FILTER_META = {
     "median":   (T["accent"], "Median filter",    "Rank filter — removes impulse outliers without blurring edges."),
     "gaussian": (T["violet"], "Gaussian filter",  "Binomial smoothing — suppresses broad additive noise."),
     "wiener":   (T["ok"],     "Wiener filter",    "Adaptive — attenuates by local SNR, preserving detail."),
+    "adaptive_median": (T["cyan"], "Adaptive median",
+                        "Growing-window median — clears dense impulses, leaves non-extreme pixels untouched."),
 }
+
+SEVERITY_COLOR = {"low": T["ok"], "medium": T["warn"], "high": T["err"]}
+
+# Where a decision can run. The FPGA stage never executes on hardware in this
+# build — no board is attached — so even "rtl" means "RTL written and verified
+# against this filter", which is exactly what the label says.
+HARDWARE_META = {
+    "rtl":           (T["info"], "RTL · 1 pass",  "Implemented in rtl/. A Python transcription of the RTL matches this filter bit-for-bit; the RTL itself has not been simulated or synthesised."),
+    "rtl_multipass": (T["info"], "RTL · passes",  "RTL filter applied more than once; the top module streams one pass per frame."),
+    "software":      (T["warn"], "Software only", "No RTL counterpart — this filter cannot run on the FPGA core."),
+}
+
+
+def _hw_label(decision) -> str:
+    return HARDWARE_META[decision.hardware][1].replace("passes", f"{decision.passes} passes")
 
 
 def _label(c: str) -> str:
@@ -134,6 +158,26 @@ def _flabel(f: str) -> str:
 
 def _fcolor(f: str) -> str:
     return FILTER_META.get(f, (T["text_3"], f, ""))[0]
+
+
+def _fdesc(f: str) -> str:
+    return FILTER_META.get(f, (T["text_3"], f, ""))[2]
+
+
+def _step_label(decision) -> str:
+    """Filter name plus pass count, e.g. "Wiener filter ×2"."""
+    base = _flabel(decision.filter_name)
+    return f"{base} ×{decision.passes}" if decision.passes > 1 else base
+
+
+def rtl_code(decision) -> str:
+    """The RTL control code, or a plain statement that there is none.
+
+    A software-only filter has no code; formatting None as 2'bxx would crash,
+    and borrowing a neighbour's code would claim the FPGA ran something else.
+    """
+    code = decision.control_code
+    return "none (software only)" if code is None else f"2'b{code:02b}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -513,6 +557,27 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
   border:1px solid var(--border); box-shadow:var(--shadow-sm);
 }}
 .schip-dot {{ width:6px; height:6px; border-radius:50%; flex-shrink:0; }}
+
+/* Seven-stage pipeline flow: one tile per stage of the design. */
+.flow {{ display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:var(--s2); margin:0 0 var(--s6); }}
+.flow-s {{
+  background:var(--elevated); border:1px solid var(--border);
+  border-radius:var(--r-md); padding:var(--s3); min-width:0; box-shadow:var(--shadow-sm);
+}}
+.flow-n {{
+  font-size:var(--fs-0); font-weight:var(--fw-bold); color:var(--accent);
+  letter-spacing:.08em; margin-bottom:2px; font-variant-numeric:tabular-nums;
+}}
+.flow-name {{ font-size:var(--fs-1); font-weight:var(--fw-medium); color:var(--text); }}
+.flow-v {{
+  font-size:var(--fs-1); color:var(--text-2); margin-top:6px; line-height:1.35;
+  font-variant-numeric:tabular-nums; overflow-wrap:anywhere;
+}}
+.flow-st {{
+  display:flex; align-items:center; gap:6px; margin-top:8px;
+  font-size:var(--fs-0); color:var(--text-3); text-transform:uppercase; letter-spacing:.06em;
+}}
+@media (max-width: 1200px) {{ .flow {{ grid-template-columns:repeat(4, minmax(0,1fr)); }} }}
 .schip-l {{
   font-size:var(--fs-0); font-weight:var(--fw-bold); letter-spacing:.1em;
   text-transform:uppercase; color:var(--text-3); white-space:nowrap;
@@ -639,6 +704,7 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
   .sstrip::-webkit-scrollbar {{ display:none; }}
   .schip {{ padding:5px 10px; gap:7px; flex:0 0 auto; }}
   .schip-l {{ letter-spacing:.06em; }}
+  .flow {{ grid-template-columns:repeat(2, minmax(0,1fr)); }}
   .card {{ padding: var(--s4); }}
 
   /* A wide table scrolls inside its own frame instead of widening the page. */
@@ -1138,8 +1204,40 @@ def load_clf(ckpt: str):
         return None
     try:
         return _load_classifier(p, load_inference_config())
-    except Exception:
+    except Exception as exc:  # present but unreadable
+        global _CLASSIFIER_LOAD_ERROR
+        _CLASSIFIER_LOAD_ERROR = f"{type(exc).__name__}: {exc}"
         return None
+
+
+def clf_reason(model_path: Path) -> tuple[str, str]:
+    """Why automatic classification is unavailable: a short label and a sentence.
+
+    Three different failures used to be reported as one ("not trained"). They
+    call for different fixes — installing or unblocking PyTorch, training a
+    model, or replacing a corrupt checkpoint — so they are told apart.
+    """
+    rel = model_path.relative_to(_ROOT) if model_path.is_relative_to(_ROOT) else model_path
+    if not _CLASSIFIER_AVAILABLE:
+        present = " The checkpoint itself is present." if model_path.exists() else ""
+        return ("PyTorch unavailable",
+                f"PyTorch could not be imported, so no CNN can run ({esc(_CLASSIFIER_IMPORT_ERROR or '')})."
+                f"{present}")
+    if not model_path.exists():
+        return ("Not trained",
+                f"No checkpoint at <code>{esc(str(rel))}</code>. Train one with "
+                f"<code>python scripts/train.py</code>.")
+    return ("Checkpoint unreadable",
+            f"<code>{esc(str(rel))}</code> exists but failed to load "
+            f"({esc(_CLASSIFIER_LOAD_ERROR or 'unknown error')}).")
+
+
+def _clf_short() -> str:
+    return st.session_state.get("clf_reason", ("Unavailable", ""))[0]
+
+
+def _clf_detail() -> str:
+    return st.session_state.get("clf_reason", ("", "Automatic classification is unavailable."))[1]
 
 
 @st.cache_data(show_spinner=False)
@@ -1174,6 +1272,9 @@ def record_job(result, ref, label: str) -> None:
         "conf":      result.confidence,
         "fallback":  result.decision.used_fallback,
         "code":      result.decision.control_code,
+        "passes":    result.decision.passes,
+        "hardware":  result.decision.hardware,
+        "severity":  result.severity.level if result.severity else None,
         "mse":       m.mse  if m else None,
         "psnr":      m.psnr if m else None,
         "ssim":      m.ssim if m else None,
@@ -1213,7 +1314,7 @@ def init() -> None:
     for k, v in dict(
         nav="Dashboard", step=1, mode="quick",
         image=None, reference=None, truth=None, result=None,
-        source_label=None, dev_mode=False, use_ai=True, toast=None,
+        source_label=None, source_kind=None, dev_mode=False, use_ai=True, toast=None,
     ).items():
         st.session_state.setdefault(k, v)
     st.session_state.setdefault("jobs", [])
@@ -1303,7 +1404,7 @@ def sidebar(clf_ready: bool, hw) -> None:
         '<div class="nav-group" style="margin:16px 0 5px;">System</div>'
         '<div style="margin:0 12px;padding:10px 13px;border-radius:var(--r-lg);background:rgba(255,255,255,.018);'
         'border:1px solid rgba(99,130,170,.09);box-shadow:0 1px 4px rgba(0,0,0,.25);">'
-        + sb_status("Classifier", "Loaded" if clf_ready else "Not trained",
+        + sb_status("Classifier", "Loaded" if clf_ready else _clf_short(),
                     T["ok"] if clf_ready else T["warn"])
         + sb_status("Compute", "CPU (software)", T["accent"])
         + sb_status("RTL sources", f"{n_rtl} module{'s' if n_rtl != 1 else ''}",
@@ -1388,7 +1489,7 @@ def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
     with s2:
         st.markdown(kpi("brain", "Classification",
                         "CNN" if clf_ready else "Manual",
-                        "trained checkpoint loaded" if clf_ready else "no checkpoint found",
+                        "trained checkpoint loaded" if clf_ready else _clf_short().lower(),
                         T["ok"] if clf_ready else T["warn"]), unsafe_allow_html=True)
     with s3:
         st.markdown(kpi("cpu", "Stream geometry",
@@ -1397,7 +1498,7 @@ def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
                         T["accent"]), unsafe_allow_html=True)
     with s4:
         st.markdown(kpi("layers", "RTL sources", f'{n_rtl}',
-                        f'testbenches pass vs the golden model' if n_rtl
+                        f'RTL model matches golden filters · not simulated' if n_rtl
                         else "no modules found on disk",
                         T["ok"] if n_rtl else T["text_3"]), unsafe_allow_html=True)
 
@@ -1432,7 +1533,7 @@ def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
         with k4:
             st.markdown(kpi("brain", "Classification",
                             "CNN" if clf_ready else "Manual",
-                            "trained checkpoint loaded" if clf_ready else "no checkpoint found",
+                            "trained checkpoint loaded" if clf_ready else _clf_short().lower(),
                             T["ok"] if clf_ready else T["warn"]), unsafe_allow_html=True)
 
     # ── environment ──
@@ -1444,7 +1545,7 @@ def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
                 card_title('Processing pipeline')
                 + kv_rows([
                     ("Classifier", badge("Loaded", T["ok"], dot=True) if clf_ready
-                     else badge("Not trained", T["warn"], dot=True)),
+                     else badge(_clf_short(), T["warn"], dot=True)),
                     ("Confidence threshold", f'{cfg.confidence.threshold:.2f}'),
                     ("Low-confidence fallback", _flabel(cfg.confidence.fallback)),
                     ("Boundary mode", cfg.filters.boundary_mode),
@@ -1487,6 +1588,53 @@ def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 # PAGE · NEW PROCESSING  (workflow preserved: Upload → Analysis → Result)
 # ═══════════════════════════════════════════════════════════════════════════
+
+def pipeline_flow(result, source_kind: str | None, complete: bool) -> str:
+    """The seven stages of the design, each with what actually happened.
+
+    Every stage states its real status. The FPGA stage in particular never
+    claims hardware execution: the filter ran in the Python golden model, and
+    the RTL status says whether an RTL equivalent exists at all.
+    """
+    d, sev = result.decision, result.severity
+    h, w = result.input.shape
+    src = {"camera": "Camera frame", "upload": "Uploaded file", "sample": "Synthetic sample"}.get(
+        source_kind or "", "Image")
+    stages = [("Input", src, T["accent"], "captured")]
+    stages.append(("Pre-process", f"{w}×{h} · 8-bit grey", T["accent"], "done"))
+    if d.confidence is not None:
+        stages.append(("CNN classify", f"{_label(d.noise_class)} · {d.confidence*100:.0f}%", T["accent"], "done"))
+    else:
+        stages.append(("CNN classify", f"{_label(d.noise_class)} (manual)", T["text_3"], "not run"))
+    if sev is None:
+        stages.append(("Severity", "n/a — clean" if d.noise_class == "clean" else "disabled",
+                       T["text_3"], "skipped"))
+    elif d.severity is None:
+        stages.append(("Severity", f"{sev.level.upper()} · not applied", T["warn"], "fallback"))
+    else:
+        stages.append(("Severity", f"{sev.level.upper()} · {sev.metric:.3f}",
+                       SEVERITY_COLOR[sev.level], "estimated"))
+    stages.append(("Filter select", _step_label(d) + (" (fallback)" if d.used_fallback else ""),
+                   _fcolor(d.filter_name), "automatic"))
+    fpga_val = "No RTL filter" if d.hardware == "software" else f"{rtl_code(d)} · not on board"
+    stages.append(("FPGA filter", fpga_val, HARDWARE_META[d.hardware][0], _hw_label(d)))
+    if not complete:
+        stages.append(("Output", "pending", T["text_3"], "next"))
+    elif result.psnr_improvement is not None:
+        g = result.psnr_improvement
+        stages.append(("Output", f"{g:+.2f} dB PSNR", T["ok"] if g > 0 else T["err"], "denoised"))
+    else:
+        stages.append(("Output", "denoised · no reference", T["accent"], "denoised"))
+
+    tiles = "".join(
+        f'<div class="flow-s" role="listitem"><div class="flow-n">{i:02d}</div>'
+        f'<div class="flow-name">{esc(name)}</div>'
+        f'<div class="flow-v">{esc(val)}</div>'
+        f'<div class="flow-st"><span class="dot" style="background:{col};"></span>{esc(status)}</div></div>'
+        for i, (name, val, col, status) in enumerate(stages, 1)
+    )
+    return f'<div class="flow" role="list" aria-label="Pipeline stages">{tiles}</div>'
+
 
 def stepper(cur: int) -> str:
     steps = [("Upload", "Select an image"), ("Analysis", "Detect noise & pick filter"), ("Result", "Compare & export")]
@@ -1575,16 +1723,30 @@ def step1(cfg, ds) -> None:
     left, right = st.columns([1.15, 1], gap="large")
 
     with left:
-        st.markdown(
-            f'<div style="font-size:var(--fs-3);font-weight:600;color:{T["text"]};margin-bottom:10px;">'
-            f'Upload an image</div>', unsafe_allow_html=True)
-        up = st.file_uploader("Drop a file or browse", type=["png", "jpg", "jpeg", "bmp", "tif", "tiff"],
-                              label_visibility="collapsed")
-        st.markdown(
-            f'<div style="display:flex;gap:18px;margin-top:10px;font-size:var(--fs-1);color:{T["text_3"]};">'
-            f'<span>PNG · JPEG · BMP · TIFF</span><span>Converted to 8-bit greyscale</span></div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(card_title("Your image"), unsafe_allow_html=True)
+        tab_up, tab_cam = st.tabs(["Upload", "Camera"])
+        up, kind = None, None
+        with tab_up:
+            f = st.file_uploader("Drop a file or browse", type=["png", "jpg", "jpeg", "bmp", "tif", "tiff"],
+                                 label_visibility="collapsed")
+            st.markdown(
+                f'<div style="display:flex;gap:18px;margin-top:10px;font-size:var(--fs-1);color:{T["text_3"]};">'
+                f'<span>PNG · JPEG · BMP · TIFF</span><span>Converted to 8-bit greyscale</span></div>',
+                unsafe_allow_html=True,
+            )
+            if f is not None:
+                up, kind = f, "upload"
+        with tab_cam:
+            shot = st.camera_input("Capture a frame", label_visibility="collapsed")
+            st.markdown(
+                f'<div style="font-size:var(--fs-1);color:{T["text_3"]};margin-top:8px;line-height:1.55;">'
+                f'Single-frame capture — continuous video is not implemented. The browser JPEG-compresses '
+                f'the frame, and compression artefacts are not one of the four trained noise classes. '
+                f'Camera access needs <code>localhost</code> or HTTPS.</div>',
+                unsafe_allow_html=True,
+            )
+            if shot is not None:
+                up, kind = shot, "camera"
         if up is not None:
             img = decode_upload(up.getvalue())
             if img is None:
@@ -1603,7 +1765,9 @@ def step1(cfg, ds) -> None:
                 )
             else:
                 ss.image, ss.reference, ss.truth = img, None, None
-                ss.source_label, ss.step = up.name, 2
+                ss.source_kind = kind
+                ss.source_label = "camera frame" if kind == "camera" else up.name
+                ss.step = 2
                 st.rerun()
 
     with right:
@@ -1648,6 +1812,7 @@ def step1(cfg, ds) -> None:
                     noisy, truth = clean, "clean"
                 ss.image, ss.reference, ss.truth = noisy, clean, truth
                 ss.source_label = f"{pick} · {kind.split(' —')[0].lower()}"
+                ss.source_kind = "sample"
                 ss.step = 2
                 st.rerun()
 
@@ -1656,6 +1821,7 @@ def step2(cfg, clf, clf_ready: bool) -> None:
     ss = st.session_state
     img, ref, truth = ss.image, ss.reference, ss.truth
     st.markdown(stepper(2), unsafe_allow_html=True)
+    flow_slot = st.empty()
 
     left, right = st.columns([1, 1.1], gap="large")
 
@@ -1696,10 +1862,8 @@ def step2(cfg, clf, clf_ready: bool) -> None:
         else:
             if not clf_ready:
                 st.markdown(
-                    alert("No trained classifier",
-                          "No checkpoint was found at <code>models/checkpoints/best_model.pt</code>, so the "
-                          "noise class cannot be predicted. Choose it manually below, or train a model with "
-                          "<code>python scripts/train.py</code>.", "warning"),
+                    alert(f"No automatic classification — {_clf_short()}",
+                          f"{_clf_detail()} Choose the noise class manually below.", "warning"),
                     unsafe_allow_html=True,
                 )
             idx = CLASSES.index(truth) if truth in CLASSES else 1
@@ -1707,6 +1871,7 @@ def step2(cfg, clf, clf_ready: bool) -> None:
             result = process_image(img, cfg, noise_class=mc, reference=ref)
 
         ss.result = result
+        flow_slot.markdown(pipeline_flow(result, ss.source_kind, complete=False), unsafe_allow_html=True)
         rec = result.selected_filter
         nc, fc = _ncolor(result.noise_class), _fcolor(rec)
         conf = result.confidence
@@ -1737,13 +1902,35 @@ def step2(cfg, clf, clf_ready: bool) -> None:
                 f'n/a — a manual choice carries no measured confidence.</div>'
             )
 
+        sev = result.severity
+        eyebrow = (f'font-size:var(--fs-1);color:{T["text_3"]};font-weight:600;letter-spacing:.06em;'
+                   f'text-transform:uppercase;margin-bottom:7px;')
+        body += f'<div style="{eyebrow}">Severity</div>'
+        if sev is None:
+            why = ("a clean image has no noise strength" if result.noise_class == "clean"
+                   else "severity is disabled in inference.yaml")
+            body += (f'<div style="font-size:var(--fs-2);color:{T["text_3"]};margin-bottom:16px;">'
+                     f'n/a — {why}.</div>')
+        else:
+            note = ("" if result.decision.severity is not None
+                    else " · measured, not applied — the fallback won")
+            body += (
+                f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">'
+                f'{badge(sev.level.upper(), SEVERITY_COLOR[sev.level], dot=True)}'
+                f'<span style="font-size:var(--fs-1);color:{T["text_2"]};font-variant-numeric:tabular-nums;">'
+                f'{esc(sev.metric_name)} {sev.metric:.3f} · cuts {sev.medium_from:g} / {sev.high_from:g}'
+                f'{note}</span></div>'
+            )
+        hc, _, hd = HARDWARE_META[result.decision.hardware]
         body += (
-            f'<div style="font-size:var(--fs-1);color:{T["text_3"]};font-weight:600;letter-spacing:.06em;'
-            f'text-transform:uppercase;margin-bottom:7px;">Selected filter</div>'
+            f'<div style="{eyebrow}">Selected filter</div>'
             f'<div style="padding:13px 15px;border-radius:var(--r-md);background:{fc}0F;border:1px solid {fc}2E;">'
-            f'<div style="font-size:var(--fs-3);font-weight:600;color:{fc};">{_flabel(rec)}</div>'
-            f'<div style="font-size:var(--fs-1);color:{T["text_2"]};margin-top:4px;line-height:1.5;">'
-            f'{esc(FILTER_META[rec][2])}</div></div>'
+            f'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">'
+            f'<span style="font-size:var(--fs-3);font-weight:600;color:{fc};">{esc(_step_label(result.decision))}</span>'
+            f'{badge(_hw_label(result.decision), hc)}</div>'
+            f'<div style="font-size:var(--fs-1);color:{T["text_2"]};margin-top:6px;line-height:1.5;">'
+            f'{esc(_fdesc(rec))}</div>'
+            f'<div style="font-size:var(--fs-1);color:{T["text_3"]};margin-top:6px;line-height:1.5;">{esc(hd)}</div></div>'
         )
         st.markdown(card(body), unsafe_allow_html=True)
 
@@ -1784,13 +1971,13 @@ def step2(cfg, clf, clf_ready: bool) -> None:
                     ("Wiener kernel", f'{cfg.filters.wiener.kernel_size}×{cfg.filters.wiener.kernel_size}'),
                     ("Wiener noise variance", f'{nv:g}' if nv is not None else "estimated per-image"),
                     ("Estimated variance", f'{var:.2f}'),
-                    ("RTL control code", f"2'b{result.decision.control_code:02b}"),
+                    ("RTL control code", rtl_code(result.decision)),
                 ]), unsafe_allow_html=True)
 
     st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
     a, b, _ = st.columns([1.9, 1.2, 3.9])
     with a:
-        if st.button(f"Apply {_flabel(result.selected_filter).lower()}", type="primary", use_container_width=True):
+        if st.button(f"Apply {_step_label(result.decision).lower()}", type="primary", use_container_width=True):
             ss.step = 3
             st.rerun()
     with b:
@@ -1840,15 +2027,22 @@ def step3(cfg) -> None:
         unsafe_allow_html=True,
     )
 
+    st.markdown(pipeline_flow(result, ss.source_kind, complete=True), unsafe_allow_html=True)
+
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(kpi("layers", "Noise class", _label(result.noise_class),
                         f"confidence {result.confidence*100:.1f}%" if result.confidence is not None
                         else "manual selection", nc), unsafe_allow_html=True)
     with k2:
-        st.markdown(kpi("shield", "Filter applied", _flabel(result.selected_filter),
-                        f"RTL code 2'b{result.decision.control_code:02b}" if ss.dev_mode
-                        else FILTER_META[result.selected_filter][2].split("—")[0].strip(), fc),
+        sev = result.severity
+        if ss.dev_mode:
+            sub = f"RTL code {rtl_code(result.decision)}"
+        elif sev is not None and result.decision.severity is not None:
+            sub = f"{sev.level} severity · {_hw_label(result.decision)}"
+        else:
+            sub = _hw_label(result.decision)
+        st.markdown(kpi("shield", "Filter applied", esc(_step_label(result.decision)), sub, fc),
                     unsafe_allow_html=True)
     with k3:
         if gain is not None:
@@ -1921,11 +2115,15 @@ def step3(cfg) -> None:
             card(kv_rows([
                 ("Image", f"{w} × {h} px · 8-bit greyscale"),
                 ("Estimated noise variance", f"{estimate_noise_variance(result.input):.3f}"),
-                ("Class → filter", f"{result.noise_class} → {result.selected_filter}"),
-                ("RTL control code", f"2'b{result.decision.control_code:02b} ({result.decision.control_code})"),
+                ("Class → filter", f"{result.noise_class} → {result.selected_filter} ×{result.decision.passes}"),
+                ("Severity", "—" if result.severity is None
+                 else f"{result.severity.level} · {result.severity.metric_name} {result.severity.metric:.4f}"),
+                ("RTL control code", rtl_code(result.decision)),
+                ("Hardware", HARDWARE_META[result.decision.hardware][2]),
                 ("Low-confidence fallback", "yes" if result.decision.used_fallback else "no"),
                 ("Preprocess", f'{t.get("preprocess",0):.3f} ms'),
                 ("Classify", f'{t.get("classify",0):.3f} ms'),
+                ("Severity", f'{t.get("severity",0):.3f} ms'),
                 ("Filter", f'{t.get("filter",0):.3f} ms'),
                 ("Total", f'{t.get("total",0):.3f} ms'),
             ])),
@@ -2339,10 +2537,9 @@ def page_settings(cfg, ds, hw, clf_ready: bool) -> None:
                 unsafe_allow_html=True)
         else:
             st.markdown(
-                alert("No trained checkpoint",
-                      f"Nothing was loaded from <code>{esc(str(cfg.model_path.relative_to(_ROOT)) if cfg.model_path.is_relative_to(_ROOT) else cfg.model_path)}</code>. "
-                      "Automatic classification is unavailable until a model is trained; the noise class "
-                      "must be chosen manually on each run.", "warning"),
+                alert(f"No automatic classification — {_clf_short()}",
+                      f"{_clf_detail()} Until that is fixed the noise class is chosen manually on each run.",
+                      "warning"),
                 unsafe_allow_html=True)
 
         st.markdown(group_label("Display"), unsafe_allow_html=True)
@@ -2428,6 +2625,7 @@ def main() -> None:
     cfg, ds, hw = load_cfg()
     clf = load_clf(str(cfg.model_path))
     clf_ready = clf is not None
+    st.session_state["clf_reason"] = ("Loaded", "") if clf_ready else clf_reason(cfg.model_path)
 
     sidebar(clf_ready, hw)
     nav = st.session_state.nav

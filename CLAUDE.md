@@ -67,9 +67,15 @@ machine with no ML framework installed; a test asserts `torch` is absent from
 ## Toolchain in this environment
 
 Python 3.12.10 with numpy, opencv, scipy, scikit-image, scikit-learn, pandas,
-matplotlib, pyyaml, pytest. **No PyTorch, no Icarus Verilog, no Verilator, no
-Vivado, no Quartus.** Phases needing them are not implemented; do not claim a
-simulation ran.
+matplotlib, pyyaml, pytest. **No Icarus Verilog, Verilator, Vivado or Quartus on
+PATH** — do not claim a simulation ran.
+
+PyTorch 2.13.0+cpu is installed, but as of 2026-09-11 **Windows Application
+Control blocks its DLL** (`import torch` -> "An Application Control policy has
+blocked this file"). While that holds, the app runs in manual mode and reports
+"PyTorch unavailable", and `tests/python/test_model.py` fails at collection —
+run the suite with `--ignore=tests/python/test_model.py` and say so. It is a
+machine policy, not a code fault: do not "fix" it in code.
 
 ## Before saying it works
 
@@ -96,16 +102,24 @@ covers architecture, class weighting, early stopping, checkpoint contents and
 prediction. It plugs into `process_image(classifier=...)` exactly as planned —
 nothing else changed and the app picked it up without edits.
 
-**PyTorch is installed** (2.13.0+cpu) and `models/checkpoints/best_model.pt` is
-a real trained checkpoint, so the app reports a loaded classifier rather than
-falling back to manual selection. It stays out of `requirements.txt` on purpose:
+`models/checkpoints/best_model.pt` is a real trained checkpoint; when PyTorch
+loads (see Toolchain — currently blocked on this machine) the app reports a
+loaded classifier rather than falling back to manual selection. It stays out of `requirements.txt` on purpose:
 ~2 GB exceeds Streamlit Community Cloud's install budget, and the app degrades
 gracefully to manual classification when it is absent. That is why the deployed
 build shows "Manual" where this machine shows "CNN" — not a bug.
 
-Next up: synthesis. Every module in `rtl/` is written and its testbench passes
-against the Python golden model, but `configs/hardware.yaml` names no vendor or
-device and **no board has been programmed**, so every figure in
+Done: severity estimation (design stage 4) and severity-driven filter
+selection, adaptive median, single-frame camera input, and the seven-stage flow
+panel on the processing page. See the section on severity below.
+
+Next up: simulation, then synthesis. Every module in `rtl/` is written, and
+`tests/rtl/rtl_model.py` — a statement-for-statement Python transcription of it —
+matches the golden filters. **That is not simulation.** It cannot catch a syntax,
+elaboration or timing error, and the `rtl/tb/*.sv` testbenches have not been run
+by a simulator in any recorded result; never describe the RTL as simulated or
+"testbench-verified". `configs/hardware.yaml` names no vendor or device and
+**no board has been programmed**, so every figure in
 `docs/hardware.md` is `TBD`. Those tables get filled from a real toolchain run
 or not at all — timing, utilisation and power are measurements, and a plausible
 number in that table would be indistinguishable from a measured one.
@@ -128,6 +142,39 @@ Note this is a different rounding rule from the noise generators' `numpy.rint`
 (half to even). That is deliberate and not a drift: the noise path converts a
 float to a pixel, where half-to-even is right; the Gaussian path is integer
 throughout, where the tie is exact and hardware rounds half up with one adder.
+
+## Severity picks the strength; measurement picked the policy
+
+`src/denoising/severity.py` reads how strong the noise is **from the noisy image
+alone** — impulse fraction for salt-and-pepper, Immerkaer sigma for Gaussian,
+sigma/mean for speckle. The cut points in `inference.yaml` are midpoints between
+the dataset's three generation levels and classify 360/360 held-out images per
+class; that is a claim about the synthetic generator, and the UI calls a real
+camera's level an estimate.
+
+`SEVERITY_POLICY` in `filters/selector.py` maps (class, level) to a filter and a
+pass count. **Every entry is a measurement** — best mean PSNR over 40 sources,
+figures recorded beside the table. Do not edit an entry without re-measuring;
+a 0.1 dB margin is a tie, ties go to fewer passes, then to the class default.
+Speckle ties go to Wiener on purpose: one Gaussian pass matches two Wiener
+passes within 0.08 dB and would halve hardware passes, but that is a design
+change to make deliberately, not through a tie.
+
+Severity off, or severity `None`, reproduces the old class mapping exactly. The
+low-confidence fallback ignores severity: an untrusted class cannot pick a
+strength. `clean` has no severity — no noise has no level.
+
+**Adaptive median has no RTL and must stay out of `FILTERS`.** `FILTERS` is the
+hardware's 2-bit control-code space; a filter in it is assumed to run on the
+FPGA. It lives in `SOFTWARE_FILTERS`, its `control_code` is `None` (never a
+borrowed 2'b01, which would make the FPGA run a plain median), and
+`FilterDecision.hardware` reports `software`. Two passes of an RTL filter report
+`rtl_multipass`: the top module streams one pass per frame, so a second needs a
+cascaded core that is not built. The UI renders all three honestly; keep it so.
+
+The camera tab is single-frame `st.camera_input`. Continuous video would need
+`streamlit-webrtc`, a new dependency that works poorly on Streamlit Cloud — ask
+before adding it.
 
 ## The pipeline refuses to invent two things
 
