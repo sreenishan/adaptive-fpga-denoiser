@@ -30,8 +30,24 @@ module tb_wiener_filter;
     logic [DEPTH-1:0] win [0:2][0:2];
     logic [DEPTH-1:0] wiener_out;
 
+    // The filters take a flat packed window (unpacked-array ports are poorly
+    // supported by Icarus, which is why the RTL was flattened). This bench was
+    // written against the old `win` array port and never updated, so it failed
+    // to elaborate. The array is kept for the stimulus and reference code
+    // below; win_flat is packed from it in the layout the module documents:
+    // element [r][c] = win_flat[(r*3+c)*DEPTH +: DEPTH].
+    logic [3*3*DEPTH-1:0] win_flat;
+    genvar gr, gc;
+    generate
+        for (gr = 0; gr < 3; gr++) begin : g_row
+            for (gc = 0; gc < 3; gc++) begin : g_col
+                assign win_flat[(gr*3+gc)*DEPTH +: DEPTH] = win[gr][gc];
+            end
+        end
+    endgenerate
+
     wiener_filter #(.DEPTH(DEPTH), .NOISE_VAR(NOISE_VAR)) dut (
-        .win(win),
+        .win_flat(win_flat),
         .wiener_out(wiener_out)
     );
 
