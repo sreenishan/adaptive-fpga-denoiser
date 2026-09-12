@@ -113,10 +113,20 @@ out = mean + max(var - noise_var, 0) / max(var, noise_var) * (pixel - mean)
 
 where `mean` and `var` are the local window statistics and `noise_var` is either
 configured or estimated. The denominator is clamped away from zero, so a flat
-window returns the local mean rather than dividing by nothing. The hardware
-version will approximate the division; whichever approximation is chosen gets
-documented here and its error against this reference reported in
-`docs/verification.md`. It stays a Wiener filter.
+window returns the local mean rather than dividing by nothing.
+
+The hardware does not approximate this by discarding the statistics. It keeps
+`81*var = 9*SUM(x^2) - (SUM x)^2`, which is exact in integers, so the 81
+cancels in the gain ratio and no rounded mean is ever squared; the gain is Q8
+and the output scaled by 9, rounded half up. The only approximation left is the
+Q8 division, worth at most one grey level — the budget in
+`configs/hardware.yaml` — and it is measured in `docs/verification.md`.
+
+`noise_var` is an input port, not a compile-time constant: the host estimates
+the noise power for the frame and writes the same integer the software filter
+uses, so the two are the same filter rather than two filters with the same
+name. `host_noise_var()` in `scripts/simulate_rtl.py` is the reference for what
+a host sends.
 
 ## Filter selection (phase 10)
 

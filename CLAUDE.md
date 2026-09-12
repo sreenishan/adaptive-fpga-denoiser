@@ -126,14 +126,15 @@ Results and method are in `docs/verification.md`; the small-frame version runs
 in pytest as `tests/rtl/test_rtl_cosim.py` and skips (never passes) without
 Icarus. Say "simulated against the golden model", never "verified on hardware".
 
-**Open design issue — the hardware Wiener is not the software Wiener.** The RTL
-fixes `NOISE_VAR = 100` at compile time; the pipeline estimates noise power per
-image (`noise_variance: null`). Co-simulation matches the RTL to the golden
-filter *at the same fixed value*, but that filter is up to 6.1 dB worse than the
-software one and differs by up to 109 grey levels. So `SEVERITY_POLICY`'s Wiener
-entries — measured with the estimated variance — describe the software pipeline,
-not what the FPGA would produce. Fixing it needs the noise power as a runtime
-RTL input; until then, do not present a software Wiener result as the FPGA's.
+**The Wiener noise power is a runtime port, and must stay one.** It was a
+compile-time parameter fixed at 100 while the pipeline estimated the variance
+per image — co-simulation put that gap at up to 6.1 dB and 109 grey levels, so
+the two were different filters sharing a name. The host now estimates the noise
+power, rounds it to an integer and writes `noise_var` alongside `filter_sel`
+(`host_noise_var()` in `scripts/simulate_rtl.py` is the reference), and the
+hardware tracks the software filter to within one grey level. Both are
+combinational control: change them between frames, not mid-frame. Turning
+`noise_var` back into a parameter would silently reopen a 6 dB gap.
 
 Next up: synthesis. `configs/hardware.yaml` names no vendor or device and
 **no board has been programmed**, so every figure in `docs/hardware.md` is

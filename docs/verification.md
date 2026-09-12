@@ -75,14 +75,16 @@ Golden co-simulation, 224x224 (the configured stream geometry), 12 images:
 the clean synthetic source, salt-and-pepper at 0.02 / 0.05 / 0.10, Gaussian at
 sigma 0.03 / 0.06 / 0.10, speckle at 0.03 / 0.06 / 0.10, and a random image of
 only 0 and 255 pixels. One image per filter was also streamed with random
-input stalls. Wiener at `NOISE_VAR = 100`, the RTL's compile-time value.
+input stalls. Wiener runs at the noise power the host measured for each frame
+and wrote to the `noise_var` port — 42 to 14435 squared grey levels across
+these images — the same integer the golden filter was given.
 
 | Filter | Frames | Pixels | Max abs error | Mean abs error | Mismatched pixels | Status |
 |---|---|---|---|---|---|---|
 | Bypass | 12 | 602,112 | 0 | 0 | 0 (0%) | pass |
 | Median | 12 | 602,112 | 0 | 0 | 0 (0%) | pass, bit-exact |
 | Gaussian | 12 | 602,112 | 0 | 0 | 0 (0%) | pass, bit-exact |
-| Wiener | 12 | 602,112 | 1 | 0.0237 | 14,289 (2.37%) | pass, within 1 LSB |
+| Wiener | 12 | 602,112 | 1 | 0.0321 | 19,336 (3.21%) | pass, within 1 LSB |
 
 48/48 frames within tolerance; 58-77 s of simulation per frame.
 
@@ -99,13 +101,40 @@ zero mismatches.
 - **Behaviour on hardware.** Simulation proves the RTL computes the golden
   result for the stimulus given. It does not prove it meets timing or survives
   a real clock, reset and I/O.
-- **The software pipeline's Wiener.** The RTL Wiener uses a fixed
-  `NOISE_VAR = 100`; the software pipeline estimates the noise power per
-  image. They are different filters. At 224x224 the fixed-variance filter is
-  up to 6.1 dB worse (Gaussian sigma 0.10: 21.54 dB against 27.63 dB) and
-  differs by up to 109 grey levels, so a Wiener decision made in software does
-  **not** describe what the FPGA would output. Only at Gaussian sigma 0.03 do
-  the two agree (39.12 vs 39.03 dB). Closing this needs the noise power as a
-  runtime input to the RTL, which it does not have.
 - **Adaptive median, and two-pass decisions.** Adaptive median has no RTL at
   all, and the top module runs one pass per frame; neither is simulated here.
+
+## Resolved: the hardware Wiener is now the software Wiener
+
+`noise_var` was a compile-time parameter fixed at 100, so the hardware ran the
+fixed-variance filter while the pipeline estimated the noise power per image.
+Co-simulation measured that gap at up to 6.1 dB and 109 grey levels: the two
+shared a name and were not the same filter.
+
+It is an input port now. The host estimates the noise power for the frame,
+rounds it to an integer, and writes it alongside `filter_sel`; the golden filter
+is given the same integer. PSNR against the clean source, 224x224:
+
+| Case | `noise_var` sent | Old fixed 100 | Host integer | Software float |
+|---|---|---|---|---|
+| salt_pepper 0.02 | 379 | 22.63 | 23.55 | 23.55 |
+| salt_pepper 0.05 | 862 | 18.74 | 21.00 | 21.00 |
+| salt_pepper 0.10 | 1682 | 15.65 | 19.36 | 19.36 |
+| gaussian 0.03 | 95 | 39.12 | 39.04 | 39.03 |
+| gaussian 0.06 | 249 | 28.24 | 32.30 | 32.30 |
+| gaussian 0.10 | 601 | 21.54 | 27.63 | 27.63 |
+| speckle 0.03 | 516 | 22.25 | 26.61 | 26.61 |
+| speckle 0.06 | 942 | 18.79 | 23.76 | 23.76 |
+| speckle 0.10 | 1476 | 16.45 | 21.72 | 21.72 |
+
+The hardware now tracks the software filter to within one grey level in every
+case, gaining up to 6.09 dB over the fixed value. Gaussian sigma 0.03 is the
+one exception and is 0.08 dB *worse*: the estimate there is 95, and a fixed 100
+happened to suit that noise level marginally better. Matching the software
+filter is the goal, not beating it — a hardware output that disagrees with the
+software decision is the failure this closes.
+
+`tb_wiener_filter` now sweeps `noise_var` over {0, 1, 25, 100, 400, 4000,
+65025} in a single run, which a compile-time parameter could not do. The module
+header had claimed agreement across that range without it being checked in any
+recorded run.
