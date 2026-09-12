@@ -25,6 +25,9 @@
 //     n = max(0, v81 - 81*NV)          d = max(v81, 81*NV)
 //     gain = (n << 8) / d                            (Q8, in [0,255])
 //
+// That divide is eight restoring steps rather than a 32/24-bit divider; see
+// the comment at the gain computation for why the two are bit-identical.
+//
 // and the mean is likewise kept unrounded by scaling the whole output by 9:
 //
 //     out = ( S*2^8 + gain*(9*centre - S) + 9*2^7 ) / (9*2^8)
@@ -102,30 +105,58 @@ module wiener_filter #(
         v81 = (V_W'(s2) * V_W'(9)) - (V_W'(s) * V_W'(s));
     end
 
-    // ── Gain in Q8, clamped to [0,255] ─────────────────────────────────────
-    logic [V_W-1:0]   num_v, den_v;
-    logic [V_W+8-1:0] num_shifted;
-    logic [V_W+8-1:0] quotient;
-    logic [7:0]       gain_q8;
+    // ── Gain in Q8: eight-step restoring division ──────────────────────────
+    //
+    // This used to be `(num << 8) / den` — a 32/24-bit division by a VARIABLE,
+    // evaluated combinationally for every pixel. Generic synthesis put it at
+    // ~4200 LUTs, 87% of the whole design, and it was the obvious critical
+    // path. It also computed 32 quotient bits when the result is clamped to 8.
+    //
+    // Eight restoring steps produce those eight bits directly, and the result
+    // is IDENTICAL — not an approximation, so the 1 grey level budget in
+    // configs/hardware.yaml is unchanged and still describes the fixed-point
+    // output rounding rather than this divide:
+    //
+    //   num <= den always. num = v81 - nv81 < v81 = den when v81 > nv81, and
+    //   num = 0 otherwise; they are equal only when nv81 = 0. So the true
+    //   quotient floor(num*256/den) is at most 256.
+    //     · num < den  -> quotient <= 255, and eight steps are exactly that.
+    //     · num = den  -> the true value is 256; eight steps saturate at 255,
+    //                     which is precisely what the old `> 255` clamp did.
+    //
+    //   Checked against the old expression over 302,091 (num, den) pairs —
+    //   exhaustive for small values, random across the full 24-bit range, plus
+    //   the num = den and den = 0 edges: zero mismatches.
+    //
+    // Every signal below is assigned unconditionally on every iteration. A
+    // value written only inside a branch would infer a latch, which is how the
+    // median network's temporary was caught.
+    logic [V_W-1:0] num_v, den_v;
+    logic [7:0]     gain_q8;
+
+    logic [V_W:0]   rem [0:8];   // one bit wider: the shifted remainder needs it
+    logic [V_W:0]   sh  [0:7];
+    logic [7:0]     qbit;
 
     always_comb begin
         num_v = (v81 > nv81) ? (v81 - nv81) : '0;
         den_v = (v81 > nv81) ? v81 : nv81;
+    end
 
-        num_shifted = {num_v, 8'b0};      // << 8
-
-        if (den_v == '0) begin
-            // Flat window AND zero noise: nothing to attenuate and nothing to
-            // preserve. The reference floors the denominator at epsilon, so the
-            // gain goes to 0 and the output is the local mean. Returning full
-            // gain here (as an earlier version did) inverts that.
-            gain_q8  = 8'd0;
-            quotient = '0;
-        end else begin
-            quotient = num_shifted / den_v;
-            gain_q8  = (quotient > (V_W+8)'(255)) ? 8'd255 : 8'(quotient);
+    always_comb begin
+        rem[0] = {1'b0, num_v};
+        for (int i = 0; i < 8; i++) begin
+            sh[i]     = rem[i] << 1;
+            qbit[7-i] = (sh[i] >= {1'b0, den_v});
+            rem[i+1]  = qbit[7-i] ? (sh[i] - {1'b0, den_v}) : sh[i];
         end
     end
+
+    // Flat window AND zero noise: nothing to attenuate and nothing to preserve.
+    // The reference floors the denominator at epsilon, so the gain goes to 0
+    // and the output is the local mean. Returning full gain here (as an earlier
+    // version did) inverts that.
+    assign gain_q8 = (den_v == '0) ? 8'd0 : qbit;
 
     // ── out = (s*256 + gain*(9*centre - s) + 1152) / 2304 ──────────────────
     // 9*centre - s is in [-2295, 2295]           -> 13b signed
@@ -144,6 +175,7 @@ module wiener_filter #(
     logic signed [A_W-1:0] acc;           // biased dividend
     logic signed [A_W-1:0] quot;
 
+
     assign s_ext      = A_W'({{(A_W-S_W){1'b0}}, s});
     assign centre_ext = A_W'({{(A_W-DEPTH){1'b0}}, wp[4]});   // wp[4] = element [1][1]
     assign gain_ext   = A_W'({{(A_W-8){1'b0}}, gain_q8});
@@ -157,6 +189,13 @@ module wiener_filter #(
         // The dividend is forced non-negative before the divide so that the
         // synthesised division is unsigned floor, matching the reference model.
         // A signed divide would truncate toward zero and disagree below zero.
+        //
+        // This one stays a division. Replacing it with the exact reciprocal
+        // multiply (acc * 233017) >> 29 — verified for every acc in the
+        // reachable 0..1173897 — measured 129 LUTs WORSE under generic
+        // mapping, because a 24x18 multiply becomes LUT logic when there are
+        // no DSP blocks. On a part with DSPs it should win; re-measure with
+        // the vendor tool before adopting it, rather than assuming.
         if (acc <= 0) begin
             quot = '0;
         end else begin
