@@ -98,7 +98,13 @@ T = {
     # text — slightly cool whites (softer on dark backgrounds)
     "text":       "#E6EDF3",
     "text_2":     "#8B949E",
-    "text_3":     "#484F58",
+    # Was #484F58, which measured 2.28:1 on the page ground and 2.09:1 on a
+    # card — below even the 3:1 floor for non-text UI, let alone the 4.5:1 small
+    # text needs. It is not a decorative token: every KPI caption, every step
+    # description and every quiet badge is painted with it. #79859A is 5.08:1
+    # and 4.64:1 on those two surfaces, still visibly the quietest of the three
+    # text tiers (#E6EDF3 -> #8B949E -> this).
+    "text_3":     "#79859A",
     # accent — teal
     "accent":     "#00C9A7",
     "accent_hi":  "#2ED9B8",
@@ -338,11 +344,25 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
   height:40px !important; width:calc(100% - 24px) !important; margin:0 var(--s3) !important;
   padding:0 !important; background:transparent !important; border:none !important;
   box-shadow:none !important; border-radius:var(--r-md) !important;
-  color:transparent !important; font-size:0 !important;
+  color:transparent !important;
   transition: background 170ms var(--ease) !important;
+  position:relative;   /* containing block for the clipped label below */
 }}
 [data-testid="stSidebar"] .stButton > button:hover {{ background: rgba(255,255,255,.045) !important; }}
-[data-testid="stSidebar"] .stButton > button p {{ color:transparent !important; font-size:0 !important; }}
+/* The nav row you SEE is a styled div marked aria-hidden; the thing you click
+   is this Streamlit button sitting invisibly on top of it. Its label used to be
+   hidden with font-size:0 and transparent text, which left every nav button
+   with no accessible name at all — the whole navigation was unreachable by
+   name for a screen reader, and read as seven anonymous buttons.
+
+   Clipped instead of zero-sized: the text keeps a real size and is still in the
+   accessibility tree, so each button is named, while nothing of it paints. */
+[data-testid="stSidebar"] .stButton > button p {{
+  position:absolute !important; width:1px !important; height:1px !important;
+  margin:-1px !important; padding:0 !important; overflow:hidden !important;
+  clip-path:inset(50%) !important; white-space:nowrap !important; border:0 !important;
+  font-size:12px !important;
+}}
 
 [data-testid="stSidebar"] .nav-group {{
   font-size:var(--fs-0); font-weight:700; letter-spacing:.14em; text-transform:uppercase;
@@ -638,6 +658,23 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
 [data-testid="stMain"] [data-testid="stMarkdownPre"] * {{
   font-family: var(--mono) !important; font-size: inherit !important; color: inherit !important;
 }}
+
+/* Inline <code>, which is everywhere in this interface — every file path and
+   config key is written as one. Streamlit sizes it RELATIVE to its parent, so
+   inside 12px helper text it landed at 9px: a path the reader is expected to go
+   and open, set smaller than anything else on the page. Absolute size, and a
+   chip so it reads as a literal rather than as emphasis. */
+[data-testid="stMain"] :not([data-testid="stMarkdownPre"]) > code,
+[data-testid="stMain"] p code, [data-testid="stMain"] li code,
+[data-testid="stMain"] td code, [data-testid="stMain"] div code {{
+  font-family: var(--mono) !important; font-size: 12px !important;
+  padding: 1.5px 5px; border-radius: var(--r-sm);
+  background: rgba(0,201,167,.09); border: 1px solid rgba(0,201,167,.18);
+  color: #5CE488; white-space: nowrap;
+}}
+[data-testid="stMain"] [data-testid="stMarkdownPre"] code {{
+  padding:0; background:none; border:none; white-space:pre;
+}}
 .code .k {{ color:#33DEC0; }} .code .s {{ color:#A7F0D8; }} .code .c {{ color:#404060; font-style:italic; }}
 
 .empty {{
@@ -855,6 +892,14 @@ def group_label(title: str, first: bool = False) -> str:
 
 
 def badge(text: str, color: str, dot: bool = False, solid: bool = False) -> str:
+    """A pill. `color` paints the text, a 10% tint behind it and a 20% border.
+
+    That tint is why the quiet badges pass `text_2` rather than `text_3`: the
+    background it lays over the card lifts the ground the text sits on, so
+    `text_3` measured 3.78:1 inside a badge where it clears 4.64:1 as plain
+    text. A colour that is legible as body copy is not automatically legible
+    once it is also tinting its own background.
+    """
     if solid:
         style = f"background:{color};color:#0B1220;"
     else:
@@ -1875,7 +1920,7 @@ def step1(cfg, ds) -> None:
             prev = pool[pick]
             h, w = prev.shape
             st.markdown(
-                img_frame(b64(prev), pick, badge(f"{w}×{h}", T["text_3"])),
+                img_frame(b64(prev), pick, badge(f"{w}×{h}", T["text_2"])),
                 unsafe_allow_html=True,
             )
             st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
@@ -1924,14 +1969,14 @@ def step2(cfg, clf, clf_ready: bool) -> None:
     var = estimate_noise_variance(img)
 
     with left:
-        st.markdown(img_frame(b64(img), "Input", badge(f"{w}×{h}", T["text_3"])), unsafe_allow_html=True)
+        st.markdown(img_frame(b64(img), "Input", badge(f"{w}×{h}", T["text_2"])), unsafe_allow_html=True)
         st.markdown(
             card(kv_rows([
                 ("Source", esc(ss.source_label or "uploaded")),
                 ("Dimensions", f"{w} × {h} px"),
                 ("Format", "8-bit greyscale"),
                 ("Clean reference", badge("Available", T["ok"], dot=True) if ref is not None
-                 else badge("None", T["text_3"], dot=True)),
+                 else badge("None", T["text_2"], dot=True)),
             ]), pad="16px", extra="margin-top:12px;"),
             unsafe_allow_html=True,
         )
@@ -1975,7 +2020,7 @@ def step2(cfg, clf, clf_ready: bool) -> None:
             f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">'
             f'<span style="font-size:var(--fs-2);font-weight:600;color:{T["text"]};">'
             f'{"Detection" if use_ai else "Manual classification"}</span>'
-            f'{badge("CNN", T["accent"]) if use_ai else badge("Manual", T["text_3"])}</div>'
+            f'{badge("CNN", T["accent"]) if use_ai else badge("Manual", T["text_2"])}</div>'
 
             f'<div style="font-size:var(--fs-1);color:{T["text_3"]};font-weight:600;letter-spacing:.06em;'
             f'text-transform:uppercase;margin-bottom:7px;">Detected noise</div>'
