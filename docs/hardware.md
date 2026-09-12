@@ -28,7 +28,7 @@ module never grew.
 | `rst_n` | in | 1 | synchronous reset, active LOW |
 | `s_valid` | in | 1 | `s_pixel` is valid this cycle |
 | `s_pixel` | in | 8 | unsigned 0-255, raster order |
-| `s_flush` | in | 1 | hold for IMG_WIDTH+2 cycles after a frame to drain |
+| `s_flush` | in | 1 | hold for `FLUSH_CYCLES` = IMG_WIDTH+2+PIPE_STAGES cycles after a frame to drain |
 | `s_ready` | out | 1 | sink can accept (always high; no back-pressure) |
 | `m_valid` | out | 1 | `m_pixel` is valid this cycle |
 | `m_pixel` | out | 8 | unsigned 0-255 |
@@ -40,6 +40,21 @@ module never grew.
 `filter_sel` and `noise_var` are combinational control: they apply to the window
 in the generator that cycle, which trails the input pixel by IMG_WIDTH+1. Change
 them between frames.
+
+**Latency and flush.** The Wiener divider is pipelined `PIPE_STAGES` = 8 deep,
+so the first `m_valid` appears `LATENCY` = IMG_WIDTH+3+PIPE_STAGES advances
+after the first pixel, and the drain is `FLUSH_CYCLES` = IMG_WIDTH+2+PIPE_STAGES.
+Both are localparams in `rtl/fpga_denoiser_top.sv`; read them rather than
+hardcoding, because a caller still flushing for IMG_WIDTH+2 comes up
+PIPE_STAGES pixels short. **Throughput is unchanged at one pixel per cycle** —
+the divider is pipelined, not iterative.
+
+Inside the top, the window generator is flushed for only IMG_WIDTH+2 of those
+cycles. It counts its own frame and re-primes afterwards, so the extra
+PIPE_STAGES advances the controller needs would otherwise prime it partway into
+a frame that has not started and emit spurious valid pixels at the head of the
+next one — which is exactly what `tb_fpga_denoiser_top` caught: the first frame
+came out right and every later one was over-long.
 
 `backpressure` is `false` in the configuration: the first implementation is a
 valid-only stream. `in_ready` / `out_ready` are added later, and the config flag
@@ -68,14 +83,14 @@ all, and where does the logic go.
 
 | Module | LUTs | FFs |
 |---|---:|---:|
-| `wiener_filter` | 2,959 | 0 |
+| `wiener_filter` | 2,489 | 556 |
 | `line_buffer` | 0 | 3,584 |
 | `median_filter` | 415 | 0 |
 | `window_gen` | 113 | 97 |
 | `gaussian_filter` | 110 | 0 |
-| `filter_controller` | 9 | 9 |
-| `fpga_denoiser_top` | 2 | 1 |
-| **Total** | **3,608** | **3,691** |
+| `filter_controller` | 17 | 97 |
+| `fpga_denoiser_top` | 15 | 9 |
+| **Total** | **3,159** | **4,343** |
 
 Two things to know before choosing a part:
 
@@ -88,11 +103,32 @@ eight bits directly: `wiener_filter` 4,211 -> 2,959 LUTs, design total
 compute the same number, proved over 302,091 (num, den) pairs in Python and
 1,352,104 side-by-side RTL vectors, so the 1 grey level budget is untouched.
 
-`wiener_filter` is still 82% of the logic, so it remains the place to look. The
-next candidate is pipelining those eight steps across cycles, which would trade
-latency for area and timing — and unlike this change it alters the streaming
-protocol, so the top module's flush and latency contract would have to change
-with it.
+**Those eight steps are now pipelined, and it was worth 2.3x the clock.** They
+were eight 25-bit compare-subtracts in series, behind the window sums and two
+multipliers and in front of another multiply and the final divide — one pixel's
+entire computation in a single combinational cone. Each step now ends in a
+register, so eight pixels are in flight at once and **throughput is unchanged**;
+the cost is eight cycles of latency and 652 flip-flops, and the streaming
+protocol changed with it (see *Latency and flush* above).
+
+Measured by placing and routing the design on an ECP5-25k, the only flow here
+that reports timing:
+
+```
+nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
+```
+
+| | Fmax | TRELLIS_FF | MULT18X18D |
+|---|---:|---:|---:|
+| Combinational divider | 7.97 MHz | 3,691 | 15 |
+| Pipelined, 8 stages | **18.15 MHz** | 4,343 | 15 |
+
+Generic LUTs fell too (3,608 -> 3,159), because registering the chain lets yosys
+share logic it previously had to flatten. **This is an ECP5 number and the board
+tables below are still `TBD`** — it is a like-for-like comparison of two versions
+of this design on one part, not a claim about any target hardware.
+
+`wiener_filter` is still 79% of the logic, so it remains the place to look.
 
 **The remaining constant divide is deliberate.** `acc / 2304` could be the exact
 reciprocal multiply `(acc * 233017) >> 29` — verified for every `acc` in the

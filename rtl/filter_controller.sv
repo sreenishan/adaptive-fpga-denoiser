@@ -43,8 +43,13 @@ module filter_controller #(
     gaussian_filter #(.DEPTH(DEPTH))
         u_gaussian (.win_flat(win_flat), .gaussian_out(gaussian_px));
 
-    wiener_filter  #(.DEPTH(DEPTH), .NV_W(NV_W))
-        u_wiener  (.win_flat(win_flat), .noise_var(noise_var), .wiener_out(wiener_px));
+    // The Wiener divider is pipelined, so its answer for this window arrives
+    // DIV_STAGES cycles from now. This must equal wiener_filter's STAGES.
+    localparam int DIV_STAGES = 8;
+
+    wiener_filter  #(.DEPTH(DEPTH), .NV_W(NV_W), .STAGES(DIV_STAGES))
+        u_wiener  (.clk(clk), .rst_n(rst_n), .en(en),
+                   .win_flat(win_flat), .noise_var(noise_var), .wiener_out(wiener_px));
 
     // ── Output mux + pipeline register ────────────────────────────────────
     logic [DEPTH-1:0] mux_out;
@@ -53,14 +58,57 @@ module filter_controller #(
     logic [DEPTH-1:0] centre;
     assign centre = win_flat[4*DEPTH +: DEPTH];
 
+    // Bypass, median and Gaussian are combinational: their answer for this
+    // window is ready now, while the Wiener path is DIV_STAGES cycles behind.
+    // Muxing them together directly would combine results from different
+    // pixels, so the combinational answer, the selector and the valid all get
+    // delayed by the same depth. Delaying the 8-bit result rather than the
+    // 72-bit window is what keeps this cheap.
+    logic [DEPTH-1:0] comb_px;
     always_comb begin
         case (filter_sel)
-            2'b00:   mux_out = centre;
-            2'b01:   mux_out = median_px;
-            2'b10:   mux_out = gaussian_px;
-            2'b11:   mux_out = wiener_px;
-            default: mux_out = centre;
+            2'b01:   comb_px = median_px;
+            2'b10:   comb_px = gaussian_px;
+            default: comb_px = centre;   // bypass; the wiener code is handled below
         endcase
+    end
+
+    // Driven only by their always_ff blocks; see the note in wiener_filter.sv
+    // about mixing continuous and clocked drivers on one array.
+    logic [DEPTH-1:0] comb_d [1:DIV_STAGES];
+    logic [1:0]       sel_d  [1:DIV_STAGES];
+    logic             vld_d  [1:DIV_STAGES];
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            comb_d[1] <= '0;
+            sel_d[1]  <= 2'b00;
+            vld_d[1]  <= 1'b0;
+        end else if (en) begin
+            comb_d[1] <= comb_px;
+            sel_d[1]  <= filter_sel;
+            vld_d[1]  <= valid_in;
+        end
+    end
+
+    for (genvar gd = 1; gd < DIV_STAGES; gd++) begin : g_delay
+        always_ff @(posedge clk) begin
+            if (!rst_n) begin
+                comb_d[gd+1] <= '0;
+                sel_d[gd+1]  <= 2'b00;
+                vld_d[gd+1]  <= 1'b0;
+            end else if (en) begin
+                comb_d[gd+1] <= comb_d[gd];
+                sel_d[gd+1]  <= sel_d[gd];
+                vld_d[gd+1]  <= vld_d[gd];
+            end
+        end
+    end
+
+    // Everything here belongs to the same pixel: the Wiener pipeline output and
+    // the delayed combinational one, chosen by the equally delayed selector.
+    always_comb begin
+        mux_out = (sel_d[DIV_STAGES] == 2'b11) ? wiener_px : comb_d[DIV_STAGES];
     end
 
     always_ff @(posedge clk) begin
@@ -69,7 +117,7 @@ module filter_controller #(
             valid_out <= 1'b0;
         end else if (en) begin
             pixel_out <= mux_out;
-            valid_out <= valid_in;
+            valid_out <= vld_d[DIV_STAGES];
         end else begin
             valid_out <= 1'b0;   // no new pixel this cycle
         end

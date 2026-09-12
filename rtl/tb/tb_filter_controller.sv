@@ -2,13 +2,19 @@
 //
 // Self-checking testbench for filter_controller.
 //
-// The controller is a mux + one pipeline register. Tests:
+// The controller is a mux + one pipeline register, behind a DIV_STAGES-deep
+// Wiener divider: a window presented now emerges LATENCY = DIV_STAGES+1 cycles
+// later, on every path. The combinational filters are delayed to match, which
+// is the property test 1-4 below would catch a regression in — if bypass came
+// out early it would be paired with the wrong pixel's Wiener result.
+//
+// Tests:
 //   1. filter_sel=00 (bypass): output = win[1][1], delayed one cycle
 //   2. filter_sel=01 (median): output matches the 19-comparator network
 //   3. filter_sel=10 (gaussian): output matches the binomial kernel
 //   4. filter_sel=11 (wiener): output within 1 LSB of the exact-integer ref
 //   5. Stall: en=0 suppresses valid_out (no phantom pixel)
-//   6. valid_in propagation: valid_out appears exactly one cycle after valid_in
+//   6. valid_in propagation: valid_out follows valid_in through the pipeline
 
 `timescale 1ns/1ps
 `default_nettype none
@@ -91,7 +97,14 @@ module tb_filter_controller;
     // ── Helpers ────────────────────────────────────────────────────────────
     int errors;
 
-    // Drive a window, advance one clock with en=1, valid_in=1, then check.
+    // Must match DIV_STAGES in filter_controller.sv, plus the output register.
+    localparam int DIV_STAGES = 8;
+    localparam int LATENCY    = DIV_STAGES + 1;
+
+    // Drive one window for one cycle, then wait LATENCY cycles for it to come
+    // out. valid_in is dropped immediately after the window is taken so exactly
+    // one pixel is in flight — otherwise the stall tests below would be looking
+    // at leftovers from this one.
     task automatic drive_and_check(
         input [1:0]       sel,
         input [DEPTH-1:0] p0,p1,p2,p3,p4,p5,p6,p7,p8,
@@ -107,9 +120,13 @@ module tb_filter_controller;
         win_flat[(0*3+0)*DEPTH +: DEPTH]=p0; win_flat[(0*3+1)*DEPTH +: DEPTH]=p1; win_flat[(0*3+2)*DEPTH +: DEPTH]=p2;
         win_flat[(1*3+0)*DEPTH +: DEPTH]=p3; win_flat[(1*3+1)*DEPTH +: DEPTH]=p4; win_flat[(1*3+2)*DEPTH +: DEPTH]=p5;
         win_flat[(2*3+0)*DEPTH +: DEPTH]=p6; win_flat[(2*3+1)*DEPTH +: DEPTH]=p7; win_flat[(2*3+2)*DEPTH +: DEPTH]=p8;
-        @(posedge clk); #1;
+        @(posedge clk);
+        @(negedge clk);
+        valid_in = 1'b0;
+        repeat (LATENCY-1) @(posedge clk);
+        #1;
         if (!valid_out) begin
-            $display("FAIL %s: valid_out not asserted", tag);
+            $display("FAIL %s: valid_out not asserted after %0d cycles", tag, LATENCY);
             errors++;
         end
         diff = int'(pixel_out) - int'(exp);

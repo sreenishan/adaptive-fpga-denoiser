@@ -7,16 +7,25 @@
 //
 // PROTOCOL
 //   Assert s_valid for exactly IMG_WIDTH*IMG_HEIGHT pixels in raster order,
-//   then hold s_flush for IMG_WIDTH+2 cycles to drain the pipeline. m_valid is
+//   then hold s_flush for FLUSH_CYCLES cycles to drain the pipeline. m_valid is
 //   then high for exactly IMG_WIDTH*IMG_HEIGHT cycles in total, one per input
 //   pixel, each carrying the replicate-padded 3×3 result for that pixel.
 //   The stream may stall (s_valid low) at any point; the pipeline holds.
 //
+//   FLUSH_CYCLES is IMG_WIDTH + 2 + PIPE_STAGES, both localparams below. It
+//   was IMG_WIDTH+2 while every filter was combinational; the Wiener divider is
+//   pipelined now, so a caller that still flushes for IMG_WIDTH+2 will come up
+//   PIPE_STAGES pixels short. Read the localparam rather than hardcoding it.
+//
 // LATENCY
-//   window_gen primes for IMG_WIDTH+2 advances, and filter_controller adds one
-//   register stage, so the first m_valid appears IMG_WIDTH+3 advances after the
-//   first pixel. (The previous header claimed IMG_WIDTH*(SIZE/2) + SIZE/2,
-//   which was both the wrong formula and two cycles short.)
+//   window_gen primes for IMG_WIDTH+2 advances, filter_controller's Wiener
+//   divider adds PIPE_STAGES, and its output register one more, so the first
+//   m_valid appears IMG_WIDTH+3+PIPE_STAGES advances after the first pixel.
+//   (An older header claimed IMG_WIDTH*(SIZE/2) + SIZE/2, which was both the
+//   wrong formula and two cycles short.)
+//
+//   Throughput is unaffected: the divider is pipelined, not iterative, so one
+//   pixel still enters and leaves per advance.
 //
 // filter_sel, noise_var
 //   The filter cores are combinational, so this control applies to whichever
@@ -62,11 +71,41 @@ module fpga_denoiser_top #(
     output logic              m_overflow // sticky: a pixel was produced while
                                          // m_ready was low and has been lost
 );
+    // Pipeline depth of the Wiener divider in filter_controller. These two must
+    // agree with DIV_STAGES there; the flush contract in the header is written
+    // in terms of them, and the testbenches read them rather than hardcoding.
+    localparam int PIPE_STAGES   = 8;
+    localparam int LATENCY       = IMG_WIDTH + 3 + PIPE_STAGES;
+    localparam int FLUSH_CYCLES  = IMG_WIDTH + 2 + PIPE_STAGES;
+
     // No internal buffering, so the source is never stalled.
     assign s_ready = 1'b1;
 
+    // The controller runs for the whole flush: the last window still has to
+    // travel the Wiener divider's PIPE_STAGES plus the output register.
     logic advance;
     assign advance = s_valid | s_flush;
+
+    // The window generator must NOT. It finishes the frame after IMG_WIDTH+2
+    // flush advances and then re-primes for the next one, so the extra
+    // PIPE_STAGES advances the controller needs would prime it partway into a
+    // frame that has not started and emit spurious valid pixels at the head of
+    // the next one. (Symptom, before this counter existed: the first frame came
+    // out right and every later frame was over-long by the surplus.)
+    localparam int WIN_FLUSH = IMG_WIDTH + 2;
+    localparam int FCW       = $clog2(FLUSH_CYCLES + 1);
+
+    logic [FCW-1:0] flush_cnt;
+    logic           win_flush;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n)              flush_cnt <= '0;
+        else if (!s_flush)       flush_cnt <= '0;        // between frames
+        else if (flush_cnt < FCW'(FLUSH_CYCLES))
+                                 flush_cnt <= flush_cnt + FCW'(1);
+    end
+
+    assign win_flush = s_flush && (flush_cnt < FCW'(WIN_FLUSH));
 
     // ── Window generator ──────────────────────────────────────────────────
     logic [WIN_SIZE*WIN_SIZE*DEPTH-1:0] win_flat;
@@ -82,7 +121,7 @@ module fpga_denoiser_top #(
         .rst_n     (rst_n),
         .pixel_in  (s_pixel),
         .we        (s_valid),
-        .flush     (s_flush),
+        .flush     (win_flush),
         .win_out   (win_flat),
         .valid_out (win_valid)
     );

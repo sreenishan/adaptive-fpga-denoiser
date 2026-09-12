@@ -24,6 +24,8 @@ module tb_fpga_denoiser_top;
     parameter int W          = 4;
     parameter int H          = 4;
     parameter int NOISE_VAR  = 100;
+    // Must match fpga_denoiser_top's PIPE_STAGES.
+    localparam int PIPE_STAGES = 8;
     parameter int DEPTH      = 8;
 
     // ── DUT ────────────────────────────────────────────────────────────────
@@ -162,8 +164,9 @@ module tb_fpga_denoiser_top;
             end
         end
 
-        // Flush (WIDTH+2 cycles per the updated protocol)
-        for (int i = 0; i < W+2; i++) begin
+        // Flush (W+2+PIPE_STAGES per the protocol: the Wiener divider is
+        // pipelined, so the drain is that much longer)
+        for (int i = 0; i < W+2+PIPE_STAGES; i++) begin
             @(negedge clk);
             s_valid = 1'b0; s_flush = 1'b1;
             @(posedge clk); #1;

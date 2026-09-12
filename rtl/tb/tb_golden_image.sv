@@ -30,6 +30,8 @@ module tb_golden_image;
     parameter int H         = 224;
     parameter int NV_W      = 16;
     parameter int DEPTH     = 8;
+    // Must match fpga_denoiser_top's PIPE_STAGES.
+    localparam int PIPE_STAGES = 8;
     localparam int N = W * H;
 
     logic             clk = 1'b0;
@@ -123,8 +125,10 @@ module tb_golden_image;
             end
         end
 
-        // Flush IMG_WIDTH+2 cycles, per the top module's protocol, then drain.
-        for (int i = 0; i < W + 2; i++) begin
+        // Flush FLUSH_CYCLES, per the top module's protocol, then drain. The
+        // Wiener divider is pipelined, so this is W+2+PIPE_STAGES now; flushing
+        // for W+2 would leave PIPE_STAGES pixels stuck in the pipe.
+        for (int i = 0; i < W + 2 + PIPE_STAGES; i++) begin
             @(negedge clk); s_valid = 1'b0; s_flush = 1'b1;
             @(posedge clk); #1; sample();
         end

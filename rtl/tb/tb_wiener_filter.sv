@@ -48,11 +48,31 @@ module tb_wiener_filter;
     localparam int NV_W = 16;
     logic [NV_W-1:0] noise_var;
 
-    wiener_filter #(.DEPTH(DEPTH), .NV_W(NV_W)) dut (
+    // The divider is pipelined now, so the DUT is clocked and its answer for a
+    // window appears STAGES cycles after that window is presented. This bench
+    // drives one window at a time and waits — throughput is the co-simulation's
+    // job; what is checked here is the value.
+    localparam int STAGES = 8;
+
+    logic clk = 1'b0;
+    logic rst_n;
+    always #5 clk = ~clk;
+
+    wiener_filter #(.DEPTH(DEPTH), .NV_W(NV_W), .STAGES(STAGES)) dut (
+        .clk(clk),
+        .rst_n(rst_n),
+        .en(1'b1),
         .win_flat(win_flat),
         .noise_var(noise_var),
         .wiener_out(wiener_out)
     );
+
+    // Present a window and wait for its result to emerge. Inputs change on the
+    // falling edge so they are stable at every posedge the pipeline samples.
+    task automatic settle;
+        repeat (STAGES) @(posedge clk);
+        #1;
+    endtask
 
     // ── Inline reference ───────────────────────────────────────────────────
     // Matches wiener_filter.sv statement for statement, integer arithmetic.
@@ -94,11 +114,12 @@ module tb_wiener_filter;
         input integer nv
     );
         integer exp;
+        @(negedge clk);
         win[0][0]=p0; win[0][1]=p1; win[0][2]=p2;
         win[1][0]=p3; win[1][1]=p4; win[1][2]=p5;
         win[2][0]=p6; win[2][1]=p7; win[2][2]=p8;
         noise_var = NV_W'(nv);
-        #1;
+        settle();
         exp = ref_wiener(p0,p1,p2,p3,p4,p5,p6,p7,p8, nv);
         // Tolerance: 1 grey level (hardware.yaml max_abs_error.wiener = 1)
         if ((wiener_out > exp+1) || (int'(wiener_out)+1 < exp)) begin
@@ -113,11 +134,12 @@ module tb_wiener_filter;
         input [DEPTH-1:0] p0,p1,p2,p3,p4,p5,p6,p7,p8
     );
         integer exp;
+        @(negedge clk);
         win[0][0]=p0; win[0][1]=p1; win[0][2]=p2;
         win[1][0]=p3; win[1][1]=p4; win[1][2]=p5;
         win[2][0]=p6; win[2][1]=p7; win[2][2]=p8;
         noise_var = NV_W'(NOISE_VAR);
-        #1;
+        settle();
         exp = ref_wiener(p0,p1,p2,p3,p4,p5,p6,p7,p8, NOISE_VAR);
         if (wiener_out !== exp[DEPTH-1:0]) begin
             $display("FAIL: wiener(%0d,%0d,%0d, %0d,%0d,%0d, %0d,%0d,%0d) = %0d, want %0d",
@@ -132,6 +154,9 @@ module tb_wiener_filter;
         errors = 0;
         seed   = 99;
         noise_var = NV_W'(NOISE_VAR);
+        rst_n = 1'b0;
+        repeat (2) @(posedge clk);
+        rst_n = 1'b1;
 
         // ── 1. Flat windows — must return the uniform value ───────────────
         // Any flat window (all pixels equal) has variance=0.

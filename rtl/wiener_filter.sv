@@ -55,14 +55,35 @@
 // Units are squared grey levels, so the largest meaningful value is 255^2 =
 // 65025 and NV_W = 16 covers it.
 //
-// Latency: fully combinational.
+// PIPELINED, NOT ITERATIVE
+// -----------------------
+// The eight restoring steps are chained: each needs the previous remainder.
+// Combinationally that is eight 25-bit compare-subtracts in series behind the
+// window sums and two multipliers, and in front of another multiply and the
+// final divide — one pixel's entire computation in a single cycle. Placed and
+// routed on an ECP5-25k that closed at 7.97 MHz.
+//
+// Each step now ends in a register, so eight pixels are in flight at once and
+// throughput stays one pixel per cycle. It costs STAGES cycles of latency, and
+// the caller must hold the stream open that much longer — see the flush
+// contract in fpga_denoiser_top.sv, which is written in terms of this depth.
+//
+// The value is unchanged: the same eight steps in the same order, just with
+// registers between them. `s` and the centre pixel ride alongside because the
+// output arithmetic needs them when the quotient emerges.
+//
+// Latency: STAGES cycles (was combinational).
 
 `default_nettype none
 
 module wiener_filter #(
-    parameter int DEPTH = 8,
-    parameter int NV_W  = 16        // width of noise_var; 255^2 = 65025 fits
+    parameter int DEPTH  = 8,
+    parameter int NV_W   = 16,      // width of noise_var; 255^2 = 65025 fits
+    parameter int STAGES = 8        // one per restoring step; also the latency
 ) (
+    input  logic              clk,
+    input  logic              rst_n,
+    input  logic              en,        // advance; hold the pipeline when low
     input  logic [3*3*DEPTH-1:0] win_flat,   // flat; element [r][c] = win_flat[(r*3+c)*DEPTH +: DEPTH]
     input  logic [NV_W-1:0]   noise_var,     // squared grey levels, per frame
     output logic [DEPTH-1:0]  wiener_out
@@ -134,21 +155,75 @@ module wiener_filter #(
     logic [V_W-1:0] num_v, den_v;
     logic [7:0]     gain_q8;
 
-    logic [V_W:0]   rem [0:8];   // one bit wider: the shifted remainder needs it
-    logic [V_W:0]   sh  [0:7];
-    logic [7:0]     qbit;
-
     always_comb begin
         num_v = (v81 > nv81) ? (v81 - nv81) : '0;
         den_v = (v81 > nv81) ? v81 : nv81;
     end
 
-    always_comb begin
-        rem[0] = {1'b0, num_v};
-        for (int i = 0; i < 8; i++) begin
-            sh[i]     = rem[i] << 1;
-            qbit[7-i] = (sh[i] >= {1'b0, den_v});
-            rem[i+1]  = qbit[7-i] ? (sh[i] - {1'b0, den_v}) : sh[i];
+    // Pipeline registers, index 1..STAGES: the value after that many stages.
+    // `den`, `s` and the centre pixel ride along because the remaining steps
+    // and the output arithmetic still need them when this pixel's quotient
+    // emerges STAGES cycles later.
+    //
+    // Each array is driven ONLY by its always_ff. Mixing a continuous assign
+    // for element 0 with clocked writes to the rest makes Icarus reject the
+    // whole array ("cannot be driven by primitives or continuous assignment"),
+    // so the first stage is written out separately from the generated rest.
+    logic [V_W:0]     rem_r [1:STAGES];
+    logic [V_W-1:0]   den_r [1:STAGES];
+    logic [7:0]       q_r   [1:STAGES];
+    logic [S_W-1:0]   s_r   [1:STAGES];
+    logic [DEPTH-1:0] c_r   [1:STAGES];
+
+    // One restoring step, combinational, per stage boundary.
+    logic [V_W:0] sh_c  [1:STAGES-1];
+    logic         bit_c [1:STAGES-1];
+    logic [V_W:0] nxt_c [1:STAGES-1];
+
+    // Step 1 works on the combinational front end (sums, v81, num/den).
+    logic [V_W:0] sh_0, nxt_0;
+    logic         bit_0;
+    assign sh_0  = {1'b0, num_v} << 1;
+    assign bit_0 = (sh_0 >= {1'b0, den_v});
+    assign nxt_0 = bit_0 ? (sh_0 - {1'b0, den_v}) : sh_0;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            rem_r[1] <= '0;
+            den_r[1] <= '0;
+            q_r[1]   <= '0;
+            s_r[1]   <= '0;
+            c_r[1]   <= '0;
+        end else if (en) begin
+            rem_r[1] <= nxt_0;
+            q_r[1]   <= {7'b0, bit_0};      // MSB first; seven bits still to come
+            den_r[1] <= den_v;
+            s_r[1]   <= s;
+            c_r[1]   <= wp[4];              // wp[4] = element [1][1], the centre
+        end
+    end
+
+    // Steps 2..STAGES. genvar, not a loop variable: an unpacked array indexed
+    // by a loop variable is not a constant index to Icarus.
+    for (genvar gr = 1; gr < STAGES; gr++) begin : g_step
+        assign sh_c[gr]  = rem_r[gr] << 1;
+        assign bit_c[gr] = (sh_c[gr] >= {1'b0, den_r[gr]});
+        assign nxt_c[gr] = bit_c[gr] ? (sh_c[gr] - {1'b0, den_r[gr]}) : sh_c[gr];
+
+        always_ff @(posedge clk) begin
+            if (!rst_n) begin
+                rem_r[gr+1] <= '0;
+                den_r[gr+1] <= '0;
+                q_r[gr+1]   <= '0;
+                s_r[gr+1]   <= '0;
+                c_r[gr+1]   <= '0;
+            end else if (en) begin
+                rem_r[gr+1] <= nxt_c[gr];
+                q_r[gr+1]   <= {q_r[gr][6:0], bit_c[gr]};
+                den_r[gr+1] <= den_r[gr];
+                s_r[gr+1]   <= s_r[gr];
+                c_r[gr+1]   <= c_r[gr];
+            end
         end
     end
 
@@ -156,7 +231,7 @@ module wiener_filter #(
     // The reference floors the denominator at epsilon, so the gain goes to 0
     // and the output is the local mean. Returning full gain here (as an earlier
     // version did) inverts that.
-    assign gain_q8 = (den_v == '0) ? 8'd0 : qbit;
+    assign gain_q8 = (den_r[STAGES] == '0) ? 8'd0 : q_r[STAGES];
 
     // ── out = (s*256 + gain*(9*centre - s) + 1152) / 2304 ──────────────────
     // 9*centre - s is in [-2295, 2295]           -> 13b signed
@@ -176,8 +251,10 @@ module wiener_filter #(
     logic signed [A_W-1:0] quot;
 
 
-    assign s_ext      = A_W'({{(A_W-S_W){1'b0}}, s});
-    assign centre_ext = A_W'({{(A_W-DEPTH){1'b0}}, wp[4]});   // wp[4] = element [1][1]
+    // The delayed copies, so the sum and centre belong to the same pixel as the
+    // quotient that just came out of the pipeline.
+    assign s_ext      = A_W'({{(A_W-S_W){1'b0}}, s_r[STAGES]});
+    assign centre_ext = A_W'({{(A_W-DEPTH){1'b0}}, c_r[STAGES]});
     assign gain_ext   = A_W'({{(A_W-8){1'b0}}, gain_q8});
 
     always_comb begin
