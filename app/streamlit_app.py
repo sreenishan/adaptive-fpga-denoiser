@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import base64
 import html
+import json
 import math
 import sys
 import time
@@ -133,8 +134,14 @@ SEVERITY_COLOR = {"low": T["ok"], "medium": T["warn"], "high": T["err"]}
 # Where a decision can run. The FPGA stage never executes on hardware in this
 # build — no board is attached — so even "rtl" means "RTL written and verified
 # against this filter", which is exactly what the label says.
+#
+# These strings say only what is true regardless of what has been run. The live
+# verdict — how many co-simulated frames matched — is read off disk by
+# cosim_summary() and shown on the dashboard, because a hardcoded answer here is
+# exactly what went stale: this tooltip claimed the RTL was "not simulated or
+# synthesised" for as long as it existed, including after both had happened.
 HARDWARE_META = {
-    "rtl":           (T["info"], "RTL · 1 pass",  "Implemented in rtl/. A Python transcription of the RTL matches this filter bit-for-bit; the RTL itself has not been simulated or synthesised."),
+    "rtl":           (T["info"], "RTL · 1 pass",  "Implemented in rtl/. A Python transcription of the RTL matches this filter bit-for-bit, and the RTL itself is co-simulated against it in Icarus — see the dashboard for the current frame count. It has never run on a board."),
     "rtl_multipass": (T["info"], "RTL · passes",  "RTL filter applied more than once; the top module streams one pass per frame."),
     "software":      (T["warn"], "Software only", "No RTL counterpart — this filter cannot run on the FPGA core."),
 }
@@ -343,6 +350,10 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
 }}
 [data-testid="stSidebar"] .nav-group-first {{ margin-top:var(--s1); }}
 
+/* gap is 0 across the sidebar, so the one control down there needs its own
+   separation from the label that introduces it. */
+[data-testid="stSidebar"] [data-testid="stToggle"] {{ margin:18px 0 0 !important; }}
+
 /* ══ BUTTONS ══ */
 [data-testid="stMain"] .stButton > button,
 [data-testid="stMain"] .stDownloadButton > button {{
@@ -490,6 +501,10 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
 
 .kpi {{
   position:relative; overflow:hidden;
+  /* Equal height across a row, with the captions bottom-aligned: one card whose
+     caption wraps to two lines used to make itself taller than its neighbours
+     and break the baseline the row reads along. */
+  height:100%; display:flex; flex-direction:column;
   background: linear-gradient(155deg, var(--elevated) 0%, rgba(13,17,23,.95) 100%);
   border:1px solid var(--border); border-radius: var(--r-xl);
   padding: var(--s5) var(--s5) var(--s4);
@@ -519,7 +534,16 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
 .kpi-l {{ font-size:var(--fs-0); font-weight:700; color: var(--text-3); letter-spacing:.12em; text-transform:uppercase; }}
 .kpi-v {{ font-size:var(--fs-6); font-weight:700; color: var(--text); letter-spacing:-0.04em; line-height:1.0;
          font-variant-numeric: tabular-nums; }}
-.kpi-s {{ font-size:var(--fs-1); color: var(--text-3); margin-top:9px; line-height:1.55; }}
+.kpi-s {{ font-size:var(--fs-1); color: var(--text-3); margin-top:auto; padding-top:9px; line-height:1.55; }}
+
+/* height:100% on the card only works if every wrapper Streamlit puts between
+   the column and it is full height too. Scoped with :has() so no other column
+   is affected; browsers without :has() simply keep the previous behaviour. */
+[data-testid="stColumn"]:has(.kpi),
+[data-testid="stColumn"]:has(.kpi) [data-testid="stVerticalBlock"],
+[data-testid="stColumn"]:has(.kpi) [data-testid="stVerticalBlock"] > div,
+[data-testid="stColumn"]:has(.kpi) [data-testid="stMarkdown"],
+[data-testid="stColumn"]:has(.kpi) [data-testid="stMarkdownContainer"] {{ height:100%; }}
 
 .badge {{
   display:inline-flex; align-items:center; gap:5px; padding:2.5px 9px; border-radius:var(--r-full);
@@ -1255,6 +1279,55 @@ def rtl_inventory() -> list[tuple[str, int]]:
     return sorted((f.name, f.stat().st_size) for f in d.glob("*.sv"))
 
 
+def cosim_summary() -> dict | None:
+    """The most recent golden co-simulation result, or None if never run.
+
+    Reads `results/rtl/cosim_<W>x<H>.json`, which `scripts/simulate_rtl.py`
+    writes after streaming real frames through the RTL in Icarus and comparing
+    every pixel against the Python filters. Nothing here is a stored claim: if
+    the file is absent the interface says the RTL has not been simulated, which
+    is what it said permanently before this function existed — the dashboard
+    had "not simulated" hardcoded, and went on saying it after the co-simulation
+    started passing.
+
+    Returns None on anything unreadable rather than guessing.
+    """
+    d = _ROOT / "results" / "rtl"
+    if not d.is_dir():
+        return None
+    files = sorted(d.glob("cosim_*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
+    for f in files:
+        try:
+            raw = json.loads(f.read_text(encoding="utf-8"))
+            frames = raw["frames"]
+            if not frames:
+                continue
+            return {
+                "total":   len(frames),
+                "passed":  sum(1 for fr in frames if fr.get("passed")),
+                "max_err": max(int(fr.get("max_abs_error", 0)) for fr in frames),
+                "width":   int(raw.get("width", 0)),
+                "height":  int(raw.get("height", 0)),
+                "mtime":   f.stat().st_mtime,
+            }
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return None
+
+
+def _cosim_sentence() -> str:
+    """What the golden co-simulation last said, in words, or that it never ran."""
+    cs = cosim_summary()
+    if cs is None:
+        return ("No golden co-simulation result is on disk, so nothing here claims the "
+                "modules have been simulated — run <code>scripts/simulate_rtl.py</code>.")
+    verdict = "match" if cs["passed"] == cs["total"] else "MATCH — the rest do not"
+    return (f'The last golden co-simulation streamed {cs["total"]} frames at '
+            f'{cs["width"]}×{cs["height"]} through them in Icarus and {cs["passed"]} '
+            f'{verdict} the software filters, worst pixel off by {cs["max_err"]}. '
+            f'Nothing here has run on a board.')
+
+
 def jobs() -> list[dict]:
     return st.session_state.setdefault("jobs", [])
 
@@ -1411,14 +1484,17 @@ def sidebar(clf_ready: bool, hw) -> None:
                     T["ok"] if n_rtl else T["text_3"])
         + sb_status("Synthesis", "Configured" if hw.synthesis.configured else "No target",
                     T["ok"] if hw.synthesis.configured else T["warn"])
+        # No "Preferences" group label here any more. It introduced exactly one
+        # control whose own text already says what it does, and it could not be
+        # made to reserve its own height: the sidebar pulls every .stButton up by
+        # 42px to sit invisibly over the styled nav rows, and a label added below
+        # that stack painted 15px over the Developer-mode toggle as margin, as
+        # padding, in its own block and folded into this one. A section label for
+        # a single self-describing switch was not worth the layout it fought.
         + '</div></div>',
         unsafe_allow_html=True,
     )
 
-    st.sidebar.markdown(
-        '<div class="sb-detail nav-group" style="margin:16px 0 2px;">Preferences</div>',
-        unsafe_allow_html=True,
-    )
     ss.dev_mode = st.sidebar.toggle(
         "Developer mode", value=ss.dev_mode,
         help="Reveals RTL control codes, filter kernel parameters, noise variance and per-stage timings.",
@@ -1497,10 +1573,21 @@ def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
                         f'{hw.stream.pixel_width}-bit · {hw.stream.boundary_policy} boundary',
                         T["accent"]), unsafe_allow_html=True)
     with s4:
-        st.markdown(kpi("layers", "RTL sources", f'{n_rtl}',
-                        f'RTL model matches golden filters · not simulated' if n_rtl
-                        else "no modules found on disk",
-                        T["ok"] if n_rtl else T["text_3"]), unsafe_allow_html=True)
+        cs = cosim_summary()
+        if not n_rtl:
+            rtl_sub, rtl_col = "no modules found on disk", T["text_3"]
+        elif cs is None:
+            rtl_sub, rtl_col = "written, never simulated", T["warn"]
+        elif cs["passed"] == cs["total"]:
+            rtl_sub = (f'co-simulated · {cs["passed"]}/{cs["total"]} frames match '
+                       f'at {cs["width"]}×{cs["height"]}')
+            rtl_col = T["ok"]
+        else:
+            rtl_sub = (f'co-simulation FAILING · {cs["passed"]}/{cs["total"]} frames '
+                       f'match at {cs["width"]}×{cs["height"]}')
+            rtl_col = T["err"]
+        st.markdown(kpi("layers", "RTL sources", f'{n_rtl}', rtl_sub, rtl_col),
+                    unsafe_allow_html=True)
 
     st.markdown(section("Session metrics"), unsafe_allow_html=True)
 
@@ -1563,6 +1650,14 @@ def page_dashboard(cfg, ds, hw, clf_ready: bool) -> None:
                     ("Stream geometry", f'{hw.stream.image_width}×{hw.stream.image_height} · {hw.stream.pixel_width}-bit'),
                     ("Boundary policy", hw.stream.boundary_policy),
                     ("Simulator", hw.simulation.simulator),
+                    ("Golden co-simulation",
+                     badge("Not run", T["warn"], dot=True) if cs is None
+                     else badge(f'{cs["passed"]}/{cs["total"]} frames', T["ok"], dot=True)
+                          if cs["passed"] == cs["total"]
+                     else badge(f'{cs["passed"]}/{cs["total"]} frames', T["err"], dot=True)),
+                    ("Max pixel error vs software",
+                     '<span style="color:' + T["text_3"] + ';">—</span>' if cs is None
+                     else f'{cs["max_err"]} grey level{"s" if cs["max_err"] != 1 else ""}'),
                     ("Synthesis target", badge("Configured", T["ok"], dot=True) if hw.synthesis.configured
                      else badge("Not set", T["warn"], dot=True)),
                 ])
@@ -2387,7 +2482,7 @@ def page_fpga(hw) -> None:
         st.markdown(
             f'<div style="font-size:var(--fs-1);color:{T["text_3"]};margin-top:12px;line-height:1.6;">'
             f'{len(inv)} source file{"s" if len(inv) != 1 else ""} on disk. Presence is verified by reading '
-            f'<code>rtl/</code> — it is not a claim that they have been simulated or synthesised.</div>',
+            f'<code>rtl/</code>. {_cosim_sentence()}</div>',
             unsafe_allow_html=True,
         )
 
