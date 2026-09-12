@@ -76,7 +76,10 @@ def wiener_3x3(window: Sequence[int], noise_var: int) -> int:
 
     Args:
         window: Nine pixel values, row-major; index 4 is the centre.
-        noise_var: Noise power in squared grey levels (the RTL's ``NOISE_VAR``).
+        noise_var: Noise power in squared grey levels. This is the RTL's
+            ``noise_var`` INPUT PORT, written per frame by the host — it was a
+            compile-time parameter until the fixed value was measured at up to
+            6.1 dB worse than the software filter.
     """
     s = sum(window)
     s2 = sum(p * p for p in window)

@@ -23,9 +23,8 @@ module tb_wiener_filter;
     parameter int NOISE_VAR = 100;
 
     // ── DUT ────────────────────────────────────────────────────────────────
-    // The RTL NOISE_VAR is fixed at compile time; we instantiate once per NV
-    // value we test.  For the random sweep we instantiate with NOISE_VAR=100
-    // and drive the reference to the same constant.
+    // noise_var is a runtime input, so one instance covers every NV value:
+    // check9 drives the port and the reference from the same argument.
 
     logic [DEPTH-1:0] win [0:2][0:2];
     logic [DEPTH-1:0] wiener_out;
@@ -46,8 +45,12 @@ module tb_wiener_filter;
         end
     endgenerate
 
-    wiener_filter #(.DEPTH(DEPTH), .NOISE_VAR(NOISE_VAR)) dut (
+    localparam int NV_W = 16;
+    logic [NV_W-1:0] noise_var;
+
+    wiener_filter #(.DEPTH(DEPTH), .NV_W(NV_W)) dut (
         .win_flat(win_flat),
+        .noise_var(noise_var),
         .wiener_out(wiener_out)
     );
 
@@ -94,6 +97,7 @@ module tb_wiener_filter;
         win[0][0]=p0; win[0][1]=p1; win[0][2]=p2;
         win[1][0]=p3; win[1][1]=p4; win[1][2]=p5;
         win[2][0]=p6; win[2][1]=p7; win[2][2]=p8;
+        noise_var = NV_W'(nv);
         #1;
         exp = ref_wiener(p0,p1,p2,p3,p4,p5,p6,p7,p8, nv);
         // Tolerance: 1 grey level (hardware.yaml max_abs_error.wiener = 1)
@@ -112,6 +116,7 @@ module tb_wiener_filter;
         win[0][0]=p0; win[0][1]=p1; win[0][2]=p2;
         win[1][0]=p3; win[1][1]=p4; win[1][2]=p5;
         win[2][0]=p6; win[2][1]=p7; win[2][2]=p8;
+        noise_var = NV_W'(NOISE_VAR);
         #1;
         exp = ref_wiener(p0,p1,p2,p3,p4,p5,p6,p7,p8, NOISE_VAR);
         if (wiener_out !== exp[DEPTH-1:0]) begin
@@ -126,6 +131,7 @@ module tb_wiener_filter;
     initial begin
         errors = 0;
         seed   = 99;
+        noise_var = NV_W'(NOISE_VAR);
 
         // ── 1. Flat windows — must return the uniform value ───────────────
         // Any flat window (all pixels equal) has variance=0.
@@ -153,6 +159,24 @@ module tb_wiener_filter;
             for (int k = 0; k < 9; k++)
                 p[k] = $urandom(seed) % 256;
             check9(p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],p[8], NOISE_VAR);
+        end
+
+        // ── 4. NV sweep, which a compile-time parameter could not do ─────
+        // The header claims agreement across NV in {0,1,25,100,400,4000}; with
+        // a runtime port that claim is now checked in this run, plus 65025
+        // (255^2, the largest meaningful value and the top of NV_W).
+        for (int n = 0; n < 7; n++) begin
+            integer nv;
+            case (n)
+                0: nv = 0;    1: nv = 1;     2: nv = 25;   3: nv = 100;
+                4: nv = 400;  5: nv = 4000;  default: nv = 65025;
+            endcase
+            for (int i = 0; i < 300; i++) begin
+                logic [DEPTH-1:0] p [0:8];
+                for (int k = 0; k < 9; k++)
+                    p[k] = $urandom(seed) % 256;
+                check9(p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],p[8], nv);
+            end
         end
 
         // ── Result ───────────────────────────────────────────────────────

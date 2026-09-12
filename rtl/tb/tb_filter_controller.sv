@@ -28,11 +28,12 @@ module tb_filter_controller;
 
     filter_controller #(
         .DEPTH     (DEPTH),
-        .NOISE_VAR (NOISE_VAR)
+        .NV_W      (16)
     ) dut (
         .clk        (clk),
         .rst_n      (rst_n),
         .filter_sel (filter_sel),
+        .noise_var  (16'(NOISE_VAR)),
         .win_flat   (win_flat),
         .valid_in   (valid_in),
         .en         (en),

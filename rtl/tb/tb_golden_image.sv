@@ -13,10 +13,13 @@
 // What this bench does fail on is the protocol: an output count other than
 // IMG_WIDTH*IMG_HEIGHT, m_overflow, or s_ready dropping.
 //
-// Plusargs:  +IN=<hex>  +OUT=<hex>  +SEL=<0..3>  [+STALL=1 +SEED=<n>]
+// Plusargs:  +IN=<hex>  +OUT=<hex>  +SEL=<0..3>  [+NV=<n> +STALL=1 +SEED=<n>]
+//   NV is the Wiener noise power the host writes for this frame (squared grey
+//   levels). It is a runtime port now, so the driver passes the same estimate
+//   the software filter used instead of recompiling per value.
 //   STALL=1 inserts random idle cycles (s_valid low) between pixels, which the
 //   top module's header says it must hold through.
-// Geometry and NOISE_VAR are parameters, set at compile time with -P.
+// Geometry is a parameter, set at compile time with -P; noise power is not.
 
 `timescale 1ns/1ps
 `default_nettype none
@@ -25,7 +28,7 @@ module tb_golden_image;
 
     parameter int W         = 224;
     parameter int H         = 224;
-    parameter int NOISE_VAR = 100;
+    parameter int NV_W      = 16;
     parameter int DEPTH     = 8;
     localparam int N = W * H;
 
@@ -36,6 +39,7 @@ module tb_golden_image;
     logic [DEPTH-1:0] s_pixel = '0;
     logic             s_flush = 1'b0;
     logic             m_ready = 1'b1;
+    logic [NV_W-1:0]  noise_var = 16'd100;
     wire              s_ready;
     wire              m_valid;
     wire  [DEPTH-1:0] m_pixel;
@@ -44,12 +48,13 @@ module tb_golden_image;
     fpga_denoiser_top #(
         .IMG_WIDTH  (W),
         .IMG_HEIGHT (H),
-        .NOISE_VAR  (NOISE_VAR),
+        .NV_W       (NV_W),
         .DEPTH      (DEPTH)
     ) dut (
         .clk        (clk),
         .rst_n      (rst_n),
         .filter_sel (filter_sel),
+        .noise_var  (noise_var),
         .s_valid    (s_valid),
         .s_pixel    (s_pixel),
         .s_flush    (s_flush),
@@ -64,7 +69,7 @@ module tb_golden_image;
 
     logic [DEPTH-1:0] image [0:N-1];
     string in_path, out_path;
-    integer sel, stall, seed, gap, fd;
+    integer sel, stall, seed, gap, fd, nv;
     integer out_count, errors;
 
     // Called once per clock, just after the rising edge.
@@ -83,6 +88,9 @@ module tb_golden_image;
         if (!$value$plusargs("IN=%s",  in_path))  $fatal(1, "tb_golden_image: missing +IN=");
         if (!$value$plusargs("OUT=%s", out_path)) $fatal(1, "tb_golden_image: missing +OUT=");
         if (!$value$plusargs("SEL=%d", sel))      $fatal(1, "tb_golden_image: missing +SEL=");
+        if (!$value$plusargs("NV=%d", nv))        nv = 100;
+        if (nv < 0 || nv > 65535) $fatal(1, "tb_golden_image: +NV=%0d outside NV_W", nv);
+        noise_var = NV_W'(nv);
         if (!$value$plusargs("STALL=%d", stall))  stall = 0;
         if (!$value$plusargs("SEED=%d", seed))    seed = 1;
         if (sel < 0 || sel > 3) $fatal(1, "tb_golden_image: +SEL=%0d out of range", sel);
@@ -131,7 +139,8 @@ module tb_golden_image;
             errors++;
         end
         if (errors != 0) $fatal(1, "tb_golden_image: FAIL (%0d protocol errors)", errors);
-        $display("tb_golden_image: %0d pixels, sel=%0d, stall=%0d", out_count, sel, stall);
+        $display("tb_golden_image: %0d pixels, sel=%0d, nv=%0d, stall=%0d",
+                 out_count, sel, nv, stall);
         $finish;
     end
 

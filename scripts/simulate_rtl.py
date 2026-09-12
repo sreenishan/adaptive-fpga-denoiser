@@ -41,6 +41,7 @@ from denoising.config import load_dataset_config, load_hardware_config  # noqa: 
 from denoising.dataset import synthetic_sources  # noqa: E402
 from denoising.filters import (  # noqa: E402
     CONTROL_CODE,
+    estimate_noise_variance,
     gaussian_filter,
     median_filter,
     wiener_filter,
@@ -52,9 +53,25 @@ from denoising.noise import (  # noqa: E402
     add_speckle_noise,
 )
 
-#: The RTL Wiener's compile-time noise power (rtl/filter_controller.sv default).
-#: The golden Wiener must use the same fixed value for a like-for-like check.
-RTL_NOISE_VAR = 100
+#: Fallback noise power, used only where an estimate makes no sense.
+#: The RTL takes ``noise_var`` as a runtime port now, so each frame is run with
+#: the value the host measured for that image — the same integer the golden
+#: filter is given, which is the whole point of the port existing.
+DEFAULT_NOISE_VAR = 100
+
+#: Widest value the RTL's NV_W=16 port can carry; 255**2 = 65025 is the most a
+#: real estimate can reach.
+NV_MAX = 65535
+
+
+def host_noise_var(image: np.ndarray) -> int:
+    """The noise power a host would send with this frame.
+
+    The software estimator returns a float; the port is an integer, so the host
+    rounds. Both sides then use the SAME integer, so any residual difference is
+    the filter's fixed-point arithmetic and not a disagreement about the input.
+    """
+    return int(min(max(round(estimate_noise_variance(image)), 0), NV_MAX))
 
 BENCH = ["rtl/tb/tb_golden_image.sv"]
 RTL = [line.strip() for line in (ROOT / "rtl" / "filelist.f").read_text().splitlines()
@@ -65,6 +82,7 @@ RTL = [line.strip() for line in (ROOT / "rtl" / "filelist.f").read_text().splitl
 class FrameResult:
     case: str
     filter: str
+    noise_var: int
     width: int
     height: int
     stall: bool
@@ -108,10 +126,11 @@ def read_hex(path: Path, shape: tuple[int, int]) -> np.ndarray:
     return np.array(values, dtype=np.uint8).reshape(shape)
 
 
-def compile_bench(iverilog: str, width: int, height: int, noise_var: int, out: Path) -> None:
+def compile_bench(iverilog: str, width: int, height: int, out: Path) -> None:
+    """Compile once per geometry. Noise power is a plusarg, not a parameter."""
     cmd = [iverilog, "-g2012", "-o", str(out),
            f"-Ptb_golden_image.W={width}", f"-Ptb_golden_image.H={height}",
-           f"-Ptb_golden_image.NOISE_VAR={noise_var}", *RTL, *BENCH]
+           *RTL, *BENCH]
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     if proc.returncode != 0:
         raise SystemExit(f"iverilog failed:\n{proc.stdout}{proc.stderr}")
@@ -151,7 +170,7 @@ def build_cases(width: int, height: int, quick: bool) -> dict[str, np.ndarray]:
     return cases
 
 
-def cosimulate(width: int, height: int, quick: bool, noise_var: int = RTL_NOISE_VAR,
+def cosimulate(width: int, height: int, quick: bool,
                workdir: Path | None = None, log=print) -> tuple[list[FrameResult], dict]:
     hw = load_hardware_config()
     tolerance = dict(hw.simulation.max_abs_error)
@@ -164,13 +183,14 @@ def cosimulate(width: int, height: int, quick: bool, noise_var: int = RTL_NOISE_
 
     with tempfile.TemporaryDirectory() as tmp:
         sim = Path(tmp) / f"golden_{width}x{height}.vvp"
-        compile_bench(iverilog, width, height, noise_var, sim)
+        compile_bench(iverilog, width, height, sim)
         cases = build_cases(width, height, quick)
         results: list[FrameResult] = []
         stall_case = next(iter(k for k in cases if k.startswith("gaussian")))
         for case, image in cases.items():
             in_hex = dirs["input"] / f"{case}_{width}x{height}.hex"
             write_hex(in_hex, image)
+            noise_var = host_noise_var(image)
             for name, code in CONTROL_CODE.items():
                 for stall in ((False, True) if case == stall_case else (False,)):
                     tag = f"{case}_{width}x{height}_{name}{'_stall' if stall else ''}"
@@ -180,34 +200,41 @@ def cosimulate(width: int, height: int, quick: bool, noise_var: int = RTL_NOISE_
                     started = time.perf_counter()
                     proc = subprocess.run(
                         [vvp, "-n", str(sim), f"+IN={in_hex.as_posix()}", f"+OUT={out_hex.as_posix()}",
-                         f"+SEL={code}", f"+STALL={int(stall)}", "+SEED=7"],
+                         f"+SEL={code}", f"+NV={noise_var}", f"+STALL={int(stall)}", "+SEED=7"],
                         cwd=ROOT, capture_output=True, text=True)
                     seconds = time.perf_counter() - started
                     if proc.returncode != 0:
                         raise SystemExit(f"simulation failed for {tag}:\n{proc.stdout}{proc.stderr}")
                     got = read_hex(out_hex, image.shape)
                     diff = np.abs(got.astype(int) - expect.astype(int))
-                    r = FrameResult(case, name, width, height, stall, int(diff.size),
+                    r = FrameResult(case, name, noise_var, width, height, stall, int(diff.size),
                                     int((diff > 0).sum()), int(diff.max()),
                                     round(float(diff.mean()), 5), tolerance[name],
                                     bool(diff.max() <= tolerance[name]), round(seconds, 2))
                     results.append(r)
-                    log(f"  {'PASS' if r.passed else 'FAIL'}  {tag:<42} mismatched {r.mismatched:>6}/"
-                        f"{r.pixels}  max|err| {r.max_abs_error}  (tol {r.tolerance})  {seconds:5.1f}s")
+                    log(f"  {'PASS' if r.passed else 'FAIL'}  {tag:<42} nv {noise_var:>5}  "
+                        f"mismatched {r.mismatched:>6}/{r.pixels}  max|err| {r.max_abs_error}  "
+                        f"(tol {r.tolerance})  {seconds:5.1f}s")
 
-    # The hardware Wiener runs at a fixed NOISE_VAR; the software pipeline
-    # estimates it per image. Quantify how far apart those two filters are.
+    # What the runtime port bought, and what integer rounding costs.
+    #   old_fixed   — what the hardware did when NOISE_VAR was compiled in
+    #   host_int    — what it does now: the host's estimate, rounded to an int
+    #   software    — the software pipeline's own float estimate
     divergence = {}
     clean = cases["clean"]
     for case, image in cases.items():
         if not case.startswith(("salt_pepper", "gaussian", "speckle")):
             continue    # PSNR against the clean source only means something for noisy copies of it
-        fixed = wiener_filter(image, 3, noise_variance=float(noise_var))
-        estimated = wiener_filter(image, 3, noise_variance=None)
+        nv = host_noise_var(image)
+        old_fixed = wiener_filter(image, 3, noise_variance=float(DEFAULT_NOISE_VAR))
+        host_int = wiener_filter(image, 3, noise_variance=float(nv))
+        software = wiener_filter(image, 3, noise_variance=None)
         divergence[case] = {
-            "max_abs_diff": int(np.abs(fixed.astype(int) - estimated.astype(int)).max()),
-            "psnr_fixed_nv": round(calculate_psnr(clean, fixed), 2),
-            "psnr_estimated_nv": round(calculate_psnr(clean, estimated), 2),
+            "host_noise_var": nv,
+            "psnr_old_fixed_100": round(calculate_psnr(clean, old_fixed), 2),
+            "psnr_host_integer": round(calculate_psnr(clean, host_int), 2),
+            "psnr_software_float": round(calculate_psnr(clean, software), 2),
+            "max_abs_diff_vs_software": int(np.abs(host_int.astype(int) - software.astype(int)).max()),
         }
     return results, divergence
 
@@ -222,19 +249,22 @@ def main() -> int:
     width = args.width or (31 if args.quick else hw.stream.image_width)
     height = args.height or (17 if args.quick else hw.stream.image_height)
 
-    print(f"Co-simulating fpga_denoiser_top at {width}x{height}, NOISE_VAR={RTL_NOISE_VAR}")
+    print(f"Co-simulating fpga_denoiser_top at {width}x{height}; "
+          f"noise_var is sent per frame by the host")
     results, divergence = cosimulate(width, height, args.quick)
     failed = [r for r in results if not r.passed]
 
     print(f"\n{len(results) - len(failed)}/{len(results)} frames within tolerance")
-    print("\nHardware Wiener (fixed NOISE_VAR) vs software Wiener (estimated), PSNR vs clean:")
+    print("\nWiener, PSNR vs clean — old compile-time 100 | host integer (now) | software float:")
     for case, d in divergence.items():
-        print(f"  {case:<18} fixed {d['psnr_fixed_nv']:6.2f} dB   estimated {d['psnr_estimated_nv']:6.2f} dB"
-              f"   max pixel diff {d['max_abs_diff']}")
+        print(f"  {case:<18} nv {d['host_noise_var']:>5}   "
+              f"{d['psnr_old_fixed_100']:6.2f} | {d['psnr_host_integer']:6.2f} | "
+              f"{d['psnr_software_float']:6.2f} dB    max pixel diff vs software "
+              f"{d['max_abs_diff_vs_software']}")
 
     out = ROOT / "results" / "rtl" / f"cosim_{width}x{height}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"width": width, "height": height, "noise_var": RTL_NOISE_VAR,
+    out.write_text(json.dumps({"width": width, "height": height,
                                "frames": [asdict(r) for r in results],
                                "wiener_divergence": divergence}, indent=2), encoding="utf-8")
     print(f"\nwrote {out.relative_to(ROOT)}")

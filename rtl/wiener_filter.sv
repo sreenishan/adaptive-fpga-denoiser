@@ -35,24 +35,33 @@
 // error 1 grey level across all 36 combinations, which is the budget
 // configs/hardware.yaml sets (max_abs_error.wiener = 1).
 //
-// SEMANTIC GAP, DELIBERATELY LEFT VISIBLE
-// ---------------------------------------
-// NOISE_VAR here is a compile-time parameter. The software reference estimates
-// the noise variance per image (the mean of the local variances) whenever
-// configs/inference.yaml leaves it null. A parameter cannot do that. Until a
-// host writes this value per frame over a control interface, the RTL is the
-// fixed-variance form of the filter and comparisons must pin the reference to
-// the same constant. This is a known difference, not an approximation.
+// NOISE POWER IS A RUNTIME INPUT
+// -----------------------------
+// `noise_var` used to be a compile-time parameter, which made this the
+// fixed-variance form of the filter while the software reference estimates the
+// variance per image (configs/inference.yaml leaves it null). Co-simulation
+// measured the cost of that gap at up to 6.1 dB and 109 grey levels, so the
+// two were not the same filter and a software Wiener result did not describe
+// what the FPGA would output.
+//
+// It is now an input port, written by the host alongside filter_sel: software
+// estimates the noise power for the frame and hands the hardware the same
+// number it used itself. Like filter_sel it is combinational, so change it
+// between frames — see the skew note in fpga_denoiser_top.sv.
+//
+// Units are squared grey levels, so the largest meaningful value is 255^2 =
+// 65025 and NV_W = 16 covers it.
 //
 // Latency: fully combinational.
 
 `default_nettype none
 
 module wiener_filter #(
-    parameter int DEPTH     = 8,
-    parameter int NOISE_VAR = 100   // squared grey levels; ~sigma=10
+    parameter int DEPTH = 8,
+    parameter int NV_W  = 16        // width of noise_var; 255^2 = 65025 fits
 ) (
     input  logic [3*3*DEPTH-1:0] win_flat,   // flat; element [r][c] = win_flat[(r*3+c)*DEPTH +: DEPTH]
+    input  logic [NV_W-1:0]   noise_var,     // squared grey levels, per frame
     output logic [DEPTH-1:0]  wiener_out
 );
     // ── Window sums ────────────────────────────────────────────────────────
@@ -82,9 +91,12 @@ module wiener_filter #(
     // Cauchy-Schwarz 9*s2 >= s*s always, so v81 is never negative.
     localparam int V_W = 2*DEPTH + 8;     // 24b
     logic [V_W-1:0] v81;
-    logic [V_W-1:0] nv81;                 // 81 * NOISE_VAR
+    logic [V_W-1:0] nv81;                 // 81 * noise_var
 
-    assign nv81 = V_W'(81 * NOISE_VAR);
+    // 81 * 65025 = 5267025, which needs 23 bits and so fits V_W (24). The
+    // multiply is evaluated at 32 bits (the width of the integer literal)
+    // before the cast, so nothing is lost on the way in.
+    assign nv81 = V_W'(81 * noise_var);
 
     always_comb begin
         v81 = (V_W'(s2) * V_W'(9)) - (V_W'(s) * V_W'(s));

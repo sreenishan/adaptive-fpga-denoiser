@@ -18,14 +18,15 @@
 //   first pixel. (The previous header claimed IMG_WIDTH*(SIZE/2) + SIZE/2,
 //   which was both the wrong formula and two cycles short.)
 //
-// filter_sel
-//   The filter cores are combinational, so filter_sel applies to whichever
+// filter_sel, noise_var
+//   The filter cores are combinational, so this control applies to whichever
 //   window is in the generator that cycle — which is the window centred
 //   IMG_WIDTH+1 pixels BEHIND the pixel currently entering s_pixel. Changing
-//   filter_sel mid-frame therefore takes effect on output pixels from that
-//   cycle onward, not on input pixels from that cycle onward. Change it only
+//   either of them mid-frame therefore takes effect on output pixels from that
+//   cycle onward, not on input pixels from that cycle onward. Change them only
 //   between frames unless that skew is what you want; the previous header
-//   called this "safe" without qualifying it.
+//   called this "safe" without qualifying it. noise_var is the Wiener noise
+//   power the host measured for this frame, in squared grey levels.
 //
 // m_ready
 //   This design has no elastic buffering and cannot stall its output. m_ready
@@ -40,7 +41,7 @@
 module fpga_denoiser_top #(
     parameter int IMG_WIDTH  = 224,
     parameter int IMG_HEIGHT = 224,
-    parameter int NOISE_VAR  = 100,
+    parameter int NV_W       = 16,
     parameter int DEPTH      = 8,
     parameter int WIN_SIZE   = 3     // neighbourhood size (must be 3 here)
 ) (
@@ -48,6 +49,7 @@ module fpga_denoiser_top #(
     input  logic              rst_n,
     // Control
     input  logic [1:0]        filter_sel,
+    input  logic [NV_W-1:0]   noise_var,   // Wiener noise power, squared grey levels
     // AXI-Stream source (input pixels)
     input  logic              s_valid,
     input  logic [DEPTH-1:0]  s_pixel,
@@ -94,11 +96,12 @@ module fpga_denoiser_top #(
     // the valid.
     filter_controller #(
         .DEPTH     (DEPTH),
-        .NOISE_VAR (NOISE_VAR)
+        .NV_W      (NV_W)
     ) u_ctrl (
         .clk        (clk),
         .rst_n      (rst_n),
         .filter_sel (filter_sel),
+        .noise_var  (noise_var),
         .win_flat   (win_flat),
         .valid_in   (win_valid),
         .en         (advance),

@@ -37,12 +37,13 @@ module tb_fpga_denoiser_top;
     fpga_denoiser_top #(
         .IMG_WIDTH  (W),
         .IMG_HEIGHT (H),
-        .NOISE_VAR  (NOISE_VAR),
+        .NV_W       (16),
         .DEPTH      (DEPTH)
     ) dut (
         .clk        (clk),
         .rst_n      (rst_n),
         .filter_sel (filter_sel),
+        .noise_var  (16'(NOISE_VAR)),
         .s_valid    (s_valid),
         .s_pixel    (s_pixel),
         .s_flush    (s_flush),

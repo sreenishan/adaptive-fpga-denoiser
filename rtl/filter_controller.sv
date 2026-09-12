@@ -16,11 +16,12 @@
 
 module filter_controller #(
     parameter int DEPTH     = 8,
-    parameter int NOISE_VAR = 100
+    parameter int NV_W = 16
 ) (
     input  logic               clk,
     input  logic               rst_n,
     input  logic [1:0]         filter_sel,
+    input  logic [NV_W-1:0]    noise_var,  // Wiener noise power, squared grey levels
     input  logic [3*3*DEPTH-1:0] win_flat,   // flat; element [r][c] = win_flat[(r*3+c)*DEPTH +: DEPTH]
     input  logic               valid_in,
     // Register enable. The output register must advance ONLY on the cycles the
@@ -42,8 +43,8 @@ module filter_controller #(
     gaussian_filter #(.DEPTH(DEPTH))
         u_gaussian (.win_flat(win_flat), .gaussian_out(gaussian_px));
 
-    wiener_filter  #(.DEPTH(DEPTH), .NOISE_VAR(NOISE_VAR))
-        u_wiener  (.win_flat(win_flat), .wiener_out(wiener_px));
+    wiener_filter  #(.DEPTH(DEPTH), .NV_W(NV_W))
+        u_wiener  (.win_flat(win_flat), .noise_var(noise_var), .wiener_out(wiener_px));
 
     // ── Output mux + pipeline register ────────────────────────────────────
     logic [DEPTH-1:0] mux_out;
