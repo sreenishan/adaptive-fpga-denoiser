@@ -156,6 +156,27 @@ approximation, and three independent checks say so:
   of the results table to the pixel — max 1, mean 0.0321, 19,336 of 602,112
   mismatched, and the same PSNR for every case.
 
+## Pipelining the divider changed no pixel either
+
+Those eight steps are now registered one per stage (see `docs/hardware.md` for
+the timing this bought). The value is the same arithmetic in the same order, and
+the re-run says so: the full 224x224 co-simulation is **48/48 frames within
+tolerance, max absolute error 1**, and every PSNR figure in the Wiener table is
+unchanged to two decimals.
+
+What pipelining *did* change is the protocol, and that is where the real bug
+was. `tb_fpga_denoiser_top` failed with the first frame correct and every later
+frame over-long — the window generator counts its own frame and re-primes, so
+the extra drain advances the controller needs were priming it into a frame that
+had not started. A per-frame bench would never have seen this: it takes running
+four frames back to back, which this bench does and which is the reason it does.
+
+Two benches assumed combinational behaviour and were **reworked rather than
+relaxed**: `tb_wiener_filter` clocks the DUT and waits `STAGES` cycles per
+window, and `tb_filter_controller` waits `DIV_STAGES+1` and drops `valid_in`
+after one cycle so exactly one pixel is in flight — otherwise its stall tests
+would have been reading leftovers and passing for the wrong reason.
+
 A formal SAT equivalence proof (yosys `miter -equiv` plus `sat -prove`) was
 attempted and **did not finish** — the window statistics contain several
 multipliers, which SAT handles badly. It is not evidence either way, and the
