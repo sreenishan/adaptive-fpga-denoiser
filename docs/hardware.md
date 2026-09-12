@@ -58,7 +58,52 @@ is what says which of the two is built.
 | Wiener accumulator | signed 24-bit |
 | `noise_var` | unsigned 16-bit (255^2 = 65025 is the largest meaningful value) |
 
+## Generic synthesis (vendor-neutral, yosys)
+
+`python scripts/synthesize_rtl.py` maps the design to generic 6-input LUTs and
+flip-flops with yosys 0.69. **This is not a fitter result for any part** — no
+timing, no vendor primitives, no placement — so the board tables below stay
+`TBD`. It answers two questions a simulator cannot: does the RTL synthesise at
+all, and where does the logic go.
+
+| Module | LUTs | FFs |
+|---|---:|---:|
+| `wiener_filter` | 4,211 | 0 |
+| `line_buffer` | 0 | 3,584 |
+| `median_filter` | 415 | 0 |
+| `window_gen` | 113 | 97 |
+| `gaussian_filter` | 110 | 0 |
+| `filter_controller` | 9 | 9 |
+| `fpga_denoiser_top` | 2 | 1 |
+| **Total** | **4,860** | **3,691** |
+
+Two things to know before choosing a part:
+
+**The Wiener divider is the design.** `wiener_filter` is 87% of all LUTs, and
+that is the variable division `num_shifted / den_v` — a 32/24-bit divide
+evaluated combinationally for every pixel. Synthesising the module standalone
+with the divide replaced by a shift halves it (8,492 -> 4,296 LUTs), so the
+divider alone is about 4,200 LUTs. (The absolute standalone figure is larger
+than the in-context one because yosys optimises differently with surrounding
+logic; both readings put the divider at roughly half the module or more.) It
+will also be the critical path. Replacing it with a reciprocal table and a
+multiply, or pipelining it across several cycles, is the obvious next move —
+and either changes the arithmetic, so it has to be re-verified against the
+golden model within the 1 grey level budget.
+
+**The line buffer is 3,584 flip-flops here, and should not be on a real part.**
+It is written as two 224-deep shift registers. In this generic flow yosys maps
+them to discrete flops; Xilinx and Intel can map the same pattern to dedicated
+shift-register primitives (SRL32 / ALTSHIFT_TAPS) or block RAM, which would be
+far smaller. Whether they actually do is the first thing to check in a vendor
+run — the `initial` block that zeroes the cells may prevent it.
+
+The other filters are cheap: Gaussian is 110 LUTs (adds and shifts only) and
+the median network 415.
+
 ## Resource utilisation
+
+Board-specific, from a vendor fitter. Nothing has been fitted.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|

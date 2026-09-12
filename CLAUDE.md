@@ -136,9 +136,25 @@ hardware tracks the software filter to within one grey level. Both are
 combinational control: change them between frames, not mid-frame. Turning
 `noise_var` back into a parameter would silently reopen a 6 dB gap.
 
-Next up: synthesis. `configs/hardware.yaml` names no vendor or device and
-**no board has been programmed**, so every figure in `docs/hardware.md` is
-`TBD`. Those tables get filled from a real toolchain run or not at all —
+Done: vendor-neutral synthesis (2026-09-12). yosys 0.69 from oss-cad-suite
+(`C:/Users/ELCOT/tools/oss-cad-suite`, add its `bin` AND `lib` to PATH or the
+binaries fail on a missing DLL) synthesises the design via
+`scripts/synthesize_rtl.py`: 4,860 LUTs and 3,691 FFs generic, table in
+`docs/hardware.md`. It found a latch that simulation cannot: `median_filter`
+swapped through a module-level temporary assigned only inside `if` branches, so
+a latch was inferred for it and yosys refused the design. The comparator stages
+are concatenated swaps now, with no temporary — keep them that way.
+
+**The Wiener divider is 87% of the logic.** `num_shifted / den_v` is a
+variable 32/24-bit divide evaluated per pixel; removing it halves the module.
+It is the obvious optimisation target and the likely critical path, but any
+replacement (reciprocal table, pipelined divider) changes the arithmetic and
+must be re-verified against the golden model within the 1 grey level budget.
+
+Next up: a board. `configs/hardware.yaml` names no vendor or device and
+**no board has been programmed**, so every board figure in `docs/hardware.md`
+is still `TBD` — generic LUT counts are not a fitter result, and there is no
+timing, no BRAM/DSP inference and no power number without one. Those tables get filled from a real toolchain run or not at all —
 timing, utilisation and power are measurements, and a plausible number in that
 table would be indistinguishable from a measured one.
 
