@@ -68,28 +68,39 @@ all, and where does the logic go.
 
 | Module | LUTs | FFs |
 |---|---:|---:|
-| `wiener_filter` | 4,211 | 0 |
+| `wiener_filter` | 2,959 | 0 |
 | `line_buffer` | 0 | 3,584 |
 | `median_filter` | 415 | 0 |
 | `window_gen` | 113 | 97 |
 | `gaussian_filter` | 110 | 0 |
 | `filter_controller` | 9 | 9 |
 | `fpga_denoiser_top` | 2 | 1 |
-| **Total** | **4,860** | **3,691** |
+| **Total** | **3,608** | **3,691** |
 
 Two things to know before choosing a part:
 
-**The Wiener divider is the design.** `wiener_filter` is 87% of all LUTs, and
-that is the variable division `num_shifted / den_v` — a 32/24-bit divide
-evaluated combinationally for every pixel. Synthesising the module standalone
-with the divide replaced by a shift halves it (8,492 -> 4,296 LUTs), so the
-divider alone is about 4,200 LUTs. (The absolute standalone figure is larger
-than the in-context one because yosys optimises differently with surrounding
-logic; both readings put the divider at roughly half the module or more.) It
-will also be the critical path. Replacing it with a reciprocal table and a
-multiply, or pipelining it across several cycles, is the obvious next move —
-and either changes the arithmetic, so it has to be re-verified against the
-golden model within the 1 grey level budget.
+**The Wiener gain divider has been replaced, and it was worth 1,252 LUTs.**
+It was a 32/24-bit division by a variable, evaluated for every pixel, and at
+4,211 LUTs it was 87% of the design. It computed 32 quotient bits where the
+result is clamped to 8, so it is now eight restoring steps producing those
+eight bits directly: `wiener_filter` 4,211 -> 2,959 LUTs, design total
+4,860 -> 3,608 (-26%). That is a cost reduction, not an approximation — the two
+compute the same number, proved over 302,091 (num, den) pairs in Python and
+1,352,104 side-by-side RTL vectors, so the 1 grey level budget is untouched.
+
+`wiener_filter` is still 82% of the logic, so it remains the place to look. The
+next candidate is pipelining those eight steps across cycles, which would trade
+latency for area and timing — and unlike this change it alters the streaming
+protocol, so the top module's flush and latency contract would have to change
+with it.
+
+**The remaining constant divide is deliberate.** `acc / 2304` could be the exact
+reciprocal multiply `(acc * 233017) >> 29` — verified for every `acc` in the
+reachable range 0..1,173,897 — but that measured **129 LUTs worse** here,
+because a 24x18 multiply becomes LUT logic when the flow has no DSP blocks. On
+a part with DSPs it should win. The constant and its derivation are in the
+module comment; re-measure with the vendor tool rather than assuming either
+way.
 
 **The line buffer is 3,584 flip-flops here, and should not be on a real part.**
 It is written as two 224-deep shift registers. In this generic flow yosys maps

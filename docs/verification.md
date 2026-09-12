@@ -138,3 +138,25 @@ software decision is the failure this closes.
 65025} in a single run, which a compile-time parameter could not do. The module
 header had claimed agreement across that range without it being checked in any
 recorded run.
+
+## The divider refactor changed no pixel
+
+`wiener_filter`'s gain divide became eight restoring steps (a 26% cut in the
+design's logic; see `docs/hardware.md`). It is a cost reduction, not an
+approximation, and three independent checks say so:
+
+- the arithmetic identity over 302,091 `(num, den)` pairs — exhaustive for small
+  values, random across the 24-bit range, plus the `num = den` and `den = 0`
+  edges: zero mismatches;
+- the old and new modules instantiated side by side in Icarus and compared for
+  **exact** equality over 1,352,104 vectors — every flat window at every grey
+  level, structured extremes, 150k random windows, each swept across
+  `noise_var` {0, 1, 25, 100, 400, 4000, 65025, 65535}: identical everywhere;
+- the full 224x224 co-simulation re-run afterwards, reproducing the Wiener row
+  of the results table to the pixel — max 1, mean 0.0321, 19,336 of 602,112
+  mismatched, and the same PSNR for every case.
+
+A formal SAT equivalence proof (yosys `miter -equiv` plus `sat -prove`) was
+attempted and **did not finish** — the window statistics contain several
+multipliers, which SAT handles badly. It is not evidence either way, and the
+claim above rests on the three checks that did complete.

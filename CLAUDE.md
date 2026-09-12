@@ -70,15 +70,18 @@ Python 3.12.10 with numpy, opencv, scipy, scikit-image, scikit-learn, pandas,
 matplotlib, pyyaml, pytest. **Icarus Verilog 12.0 is installed at
 `C:/iverilog/bin`, but NOT on PATH** — `scripts/simulate_rtl.py` and
 `tests/rtl/test_rtl_cosim.py` find it there; for `rtl/tb/run_tb.sh` export
-`PATH="/c/iverilog/bin:$PATH"` first. No Verilator, Vivado or Quartus: nothing has
-been synthesised.
+`PATH="/c/iverilog/bin:$PATH"` first. yosys 0.69 (oss-cad-suite) is at
+`C:/Users/ELCOT/tools/oss-cad-suite` — put its `bin` AND `lib` on PATH or the
+binaries fail on a missing DLL. No Verilator, Vivado or Quartus: synthesis so
+far is vendor-neutral only, and nothing has been fitted to a part.
 
-PyTorch 2.13.0+cpu is installed, but as of 2026-09-11 **Windows Application
-Control blocks its DLL** (`import torch` -> "An Application Control policy has
-blocked this file"). While that holds, the app runs in manual mode and reports
-"PyTorch unavailable", and `tests/python/test_model.py` fails at collection —
-run the suite with `--ignore=tests/python/test_model.py` and say so. It is a
-machine policy, not a code fault: do not "fix" it in code.
+PyTorch 2.13.0+cpu is installed. On 2026-09-11 Windows Application Control
+blocked its DLL (`import torch` -> "An Application Control policy has blocked
+this file"); on 2026-09-12 it loaded again and the app reported "CNN loaded".
+If it returns, the app degrades to manual and reports "PyTorch unavailable",
+and `tests/python/test_model.py` fails at collection — run the suite with
+`--ignore=tests/python/test_model.py` and say so. It is a machine policy, not a
+code fault: do not "fix" it in code.
 
 ## Before saying it works
 
@@ -139,17 +142,25 @@ combinational control: change them between frames, not mid-frame. Turning
 Done: vendor-neutral synthesis (2026-09-12). yosys 0.69 from oss-cad-suite
 (`C:/Users/ELCOT/tools/oss-cad-suite`, add its `bin` AND `lib` to PATH or the
 binaries fail on a missing DLL) synthesises the design via
-`scripts/synthesize_rtl.py`: 4,860 LUTs and 3,691 FFs generic, table in
-`docs/hardware.md`. It found a latch that simulation cannot: `median_filter`
+`scripts/synthesize_rtl.py`: 3,608 LUTs and 3,691 FFs generic after the divider
+work below, table in `docs/hardware.md`. It found a latch that simulation cannot: `median_filter`
 swapped through a module-level temporary assigned only inside `if` branches, so
 a latch was inferred for it and yosys refused the design. The comparator stages
 are concatenated swaps now, with no temporary — keep them that way.
 
-**The Wiener divider is 87% of the logic.** `num_shifted / den_v` is a
-variable 32/24-bit divide evaluated per pixel; removing it halves the module.
-It is the obvious optimisation target and the likely critical path, but any
-replacement (reciprocal table, pipelined divider) changes the arithmetic and
-must be re-verified against the golden model within the 1 grey level budget.
+Done: the Wiener gain divider. It was a variable 32/24-bit divide per pixel
+and 87% of the logic; it is eight restoring steps now, which produce the same
+eight clamped bits. `wiener_filter` 4,211 -> 2,959 LUTs, total 4,860 -> 3,608.
+**Not an approximation** — identical over 302,091 arithmetic pairs and
+1,352,104 side-by-side RTL vectors — so the 1 grey level budget still describes
+the output rounding and nothing was re-characterised. Keep it that way: any
+future replacement that is genuinely approximate has to be re-characterised
+against the golden model and the budget re-justified.
+
+`acc / 2304` stays a division on purpose. The exact reciprocal multiply
+`(acc * 233017) >> 29` measured 129 LUTs *worse* under generic mapping (no DSP
+blocks); it should win on a real part. Do not adopt it without measuring on the
+vendor tool — the constant and derivation are in the module comment.
 
 Next up: a board. `configs/hardware.yaml` names no vendor or device and
 **no board has been programmed**, so every board figure in `docs/hardware.md`
