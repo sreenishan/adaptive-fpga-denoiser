@@ -55,37 +55,45 @@ module median_filter #(
     // Working registers for the network. Blocking assignments inside
     // always_comb execute in written order, so this describes exactly the
     // 19-stage comparator cascade and synthesises to the same.
+    //
+    // Each stage is a concatenated conditional swap rather than the obvious
+    // three-line exchange through a temporary. A module-level temporary
+    // assigned only inside the `if` branches has to hold its value when no
+    // branch fires, so synthesis infers a LATCH for it and yosys refuses the
+    // design ("ERROR: Latch inferred for signal `t`"). Simulation never showed
+    // it — a variable holding its value is exactly what a simulator does.
+    // No temporary, no latch, same comparator network.
+    // tests/rtl/test_rtl_synth.py fails if this regresses.
     logic [DEPTH-1:0] v [0:8];
-    logic [DEPTH-1:0] t;
 
     always_comb begin
         for (int i = 0; i < 9; i++) v[i] = p[i];
 
         // 1..3   sort the three column triples' middles
-        if (v[1] > v[2]) begin t = v[1]; v[1] = v[2]; v[2] = t; end
-        if (v[4] > v[5]) begin t = v[4]; v[4] = v[5]; v[5] = t; end
-        if (v[7] > v[8]) begin t = v[7]; v[7] = v[8]; v[8] = t; end
+        {v[1], v[2]} = (v[1] > v[2]) ? {v[2], v[1]} : {v[1], v[2]};
+        {v[4], v[5]} = (v[4] > v[5]) ? {v[5], v[4]} : {v[4], v[5]};
+        {v[7], v[8]} = (v[7] > v[8]) ? {v[8], v[7]} : {v[7], v[8]};
         // 4..6
-        if (v[0] > v[1]) begin t = v[0]; v[0] = v[1]; v[1] = t; end
-        if (v[3] > v[4]) begin t = v[3]; v[3] = v[4]; v[4] = t; end
-        if (v[6] > v[7]) begin t = v[6]; v[6] = v[7]; v[7] = t; end
+        {v[0], v[1]} = (v[0] > v[1]) ? {v[1], v[0]} : {v[0], v[1]};
+        {v[3], v[4]} = (v[3] > v[4]) ? {v[4], v[3]} : {v[3], v[4]};
+        {v[6], v[7]} = (v[6] > v[7]) ? {v[7], v[6]} : {v[6], v[7]};
         // 7..9   each triple is now sorted
-        if (v[1] > v[2]) begin t = v[1]; v[1] = v[2]; v[2] = t; end
-        if (v[4] > v[5]) begin t = v[4]; v[4] = v[5]; v[5] = t; end
-        if (v[7] > v[8]) begin t = v[7]; v[7] = v[8]; v[8] = t; end
+        {v[1], v[2]} = (v[1] > v[2]) ? {v[2], v[1]} : {v[1], v[2]};
+        {v[4], v[5]} = (v[4] > v[5]) ? {v[5], v[4]} : {v[4], v[5]};
+        {v[7], v[8]} = (v[7] > v[8]) ? {v[8], v[7]} : {v[7], v[8]};
         // 10..12 discard the impossible extremes
-        if (v[0] > v[3]) begin t = v[0]; v[0] = v[3]; v[3] = t; end
-        if (v[5] > v[8]) begin t = v[5]; v[5] = v[8]; v[8] = t; end
-        if (v[4] > v[7]) begin t = v[4]; v[4] = v[7]; v[7] = t; end
+        {v[0], v[3]} = (v[0] > v[3]) ? {v[3], v[0]} : {v[0], v[3]};
+        {v[5], v[8]} = (v[5] > v[8]) ? {v[8], v[5]} : {v[5], v[8]};
+        {v[4], v[7]} = (v[4] > v[7]) ? {v[7], v[4]} : {v[4], v[7]};
         // 13..15
-        if (v[3] > v[6]) begin t = v[3]; v[3] = v[6]; v[6] = t; end
-        if (v[1] > v[4]) begin t = v[1]; v[1] = v[4]; v[4] = t; end
-        if (v[2] > v[5]) begin t = v[2]; v[2] = v[5]; v[5] = t; end
+        {v[3], v[6]} = (v[3] > v[6]) ? {v[6], v[3]} : {v[3], v[6]};
+        {v[1], v[4]} = (v[1] > v[4]) ? {v[4], v[1]} : {v[1], v[4]};
+        {v[2], v[5]} = (v[2] > v[5]) ? {v[5], v[2]} : {v[2], v[5]};
         // 16..19 converge on the 5th order statistic
-        if (v[4] > v[7]) begin t = v[4]; v[4] = v[7]; v[7] = t; end
-        if (v[4] > v[2]) begin t = v[4]; v[4] = v[2]; v[2] = t; end
-        if (v[6] > v[4]) begin t = v[6]; v[6] = v[4]; v[4] = t; end
-        if (v[4] > v[2]) begin t = v[4]; v[4] = v[2]; v[2] = t; end
+        {v[4], v[7]} = (v[4] > v[7]) ? {v[7], v[4]} : {v[4], v[7]};
+        {v[4], v[2]} = (v[4] > v[2]) ? {v[2], v[4]} : {v[4], v[2]};
+        {v[6], v[4]} = (v[6] > v[4]) ? {v[4], v[6]} : {v[6], v[4]};
+        {v[4], v[2]} = (v[4] > v[2]) ? {v[2], v[4]} : {v[4], v[2]};
     end
 
     // v[4] now holds the median of the nine input pixels.
