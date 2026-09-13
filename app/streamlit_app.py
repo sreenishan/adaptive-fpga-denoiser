@@ -29,7 +29,6 @@ import html
 import json
 import math
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -146,8 +145,17 @@ SEVERITY_COLOR = {"low": T["ok"], "medium": T["warn"], "high": T["err"]}
 # cosim_summary() and shown on the dashboard, because a hardcoded answer here is
 # exactly what went stale: this tooltip claimed the RTL was "not simulated or
 # synthesised" for as long as it existed, including after both had happened.
+#
+# The "rtl" string no longer claims bit-exactness flatly, because it is not
+# flatly true: configs/hardware.yaml records max_abs_error of 0 for median and
+# gaussian and 1 for wiener. Under the default config that gap is unreachable —
+# severity is enabled, so wiener always resolves to 2 passes and takes the
+# rtl_multipass string instead. Set severity.enabled: false, which this app
+# explicitly supports and reports, and the plain class mapping gives speckle
+# wiener at ONE pass: hardware == "rtl", and the old wording would have promised
+# bit-for-bit agreement for the one filter that does not have it.
 HARDWARE_META = {
-    "rtl":           (T["info"], "RTL · 1 pass",  "Implemented in rtl/. A Python transcription of the RTL matches this filter bit-for-bit, and the RTL itself is co-simulated against it in Icarus — see the dashboard for the current frame count. It has never run on a board."),
+    "rtl":           (T["info"], "RTL · 1 pass",  "Implemented in rtl/, and co-simulated against this filter in Icarus — see the dashboard for the current frame count. Agreement is bit-exact for median and Gaussian and within one grey level for Wiener, which is the tolerance configs/hardware.yaml records for each. It has never run on a board."),
     "rtl_multipass": (T["info"], "RTL · passes",  "RTL filter applied more than once; the top module streams one pass per frame."),
     "software":      (T["warn"], "Software only", "No RTL counterpart — this filter cannot run on the FPGA core."),
 }
@@ -1201,6 +1209,23 @@ def png(img: np.ndarray) -> bytes:
     return buf.tobytes() if ok else b""
 
 
+def _rel(path: Path) -> str:
+    """A checkpoint path worth copying into someone else's shell.
+
+    cfg.model_path is absolute (resolved against the repo root at load time),
+    so printing it verbatim put this machine's D:/FDEG_noise/... into a code
+    sample. Printing only .name went the other way and gave a bare
+    'best_model.pt' that resolves nowhere: load_classifier() does Path(arg)
+    and raises FileNotFoundError, it does not search. Repo-relative is the
+    form the config file itself declares and the form that runs from the
+    project root.
+    """
+    try:
+        return path.resolve().relative_to(_ROOT.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()   # outside the repo; absolute is the honest answer
+
+
 def fmt_psnr(v: float) -> str:
     return "∞" if math.isinf(v) else f"{v:.2f}"
 
@@ -2185,20 +2210,19 @@ def step3(cfg) -> None:
         record_job(result, ref, ss.source_label or "uploaded image")
         ss._recorded = True
 
-        stages = [("Reading image", .18), ("Classifying noise", .42),
-                  ("Selecting filter", .60), ("Applying filter", .88), ("Measuring quality", 1.0)]
-        slot, bar = st.empty(), st.progress(0)
-        for name, frac in stages:
-            slot.markdown(
-                f'<div style="display:flex;align-items:center;gap:10px;padding:2px 0;">'
-                f'<div style="width:14px;height:14px;border:2px solid {T["accent"]};'
-                f'border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;"></div>'
-                f'<span style="font-size:var(--fs-2);color:{T["text_2"]};">{name}…</span></div>',
-                unsafe_allow_html=True,
-            )
-            bar.progress(frac)
-            time.sleep(0.13)
-        slot.empty(); bar.empty()
+        # No progress run here any more. There used to be one: five named
+        # stages (Reading image, Classifying noise, Selecting filter,
+        # Applying filter, Measuring quality), each with a hardcoded
+        # fraction and a fixed 0.13s sleep between them.
+        #
+        # Every one of those stages had already finished. process_image()
+        # runs in step2 and its result is sitting in session state before
+        # this function is entered, so the spinner claimed to be
+        # classifying noise while no classification was happening. It was
+        # an animation of work rather than a report of it, and it cost
+        # 0.65s of deliberate delay against the ~71ms of real processing
+        # this same screen reports two panels down as 'Processing time,
+        # CPU wall-clock' -- ten times the actual runtime, spent pretending.
 
     nc, fc = _ncolor(result.noise_class), _fcolor(result.selected_filter)
     total_ms = result.timings_ms.get("total", 0.0)
@@ -2646,7 +2670,12 @@ def page_api(cfg) -> None:
         )
         st.markdown(code_block(
             "from denoising.model.inference import load_classifier\n\n"
-            f"clf = load_classifier('{cfg.model_path.name}', config)\n"
+            # cfg.model_path, not .name. load_classifier() does Path(arg) and
+            # raises FileNotFoundError if it does not exist -- it resolves
+            # nothing -- so the bare 'best_model.pt' this used to print fails
+            # anywhere but inside models/checkpoints/, under a heading that
+            # promises the examples run as written.
+            f"clf = load_classifier('{_rel(cfg.model_path)}', config)\n"
             "result = process_image(image, config, classifier=clf, reference=clean)\n\n"
             "print(result.confidence)         # e.g. 0.981\n"
             "print(result.metrics.psnr)       # dB against the reference\n"
@@ -2689,11 +2718,16 @@ def page_api(cfg) -> None:
             "  'confidence':       0.981 | None,   # None for a manual choice\n"
             "  'selected_filter':  'median',\n"
             "  'used_fallback':    False,\n"
-            "  'control_code':     1,              # RTL filter_sel, 2'b01\n"
+            "  'control_code':     1 | None,       # RTL filter_sel, 2'b01; None if software-only\n"
+            "  'passes':           1,              # times the filter is applied\n"
+            "  'hardware':         'rtl',          # 'rtl' | 'rtl_multipass' | 'software'\n"
+            "  'severity':         {'level': 'high', 'metric': .., 'metric_name': '..',\n"
+            "                       'applied': True} | None,\n"
             "  'metrics':          {'mse': .., 'psnr': .., 'ssim': ..} | None,\n"
             "  'metrics_note':     'no clean reference was supplied, ...' | None,\n"
             "  'psnr_improvement': 8.42 | None,\n"
-            "  'timings_ms':       {'preprocess':.., 'classify':.., 'filter':.., 'total':..},\n"
+            "  'timings_ms':       {'preprocess':.., 'classify':.., 'severity':..,\n"
+            "                       'filter':.., 'total':..},\n"
             "}"
         ), unsafe_allow_html=True)
         st.markdown(
