@@ -1227,56 +1227,82 @@ def img_frame(b64s: str, title: str, tag_html: str) -> str:
     )
 
 
-def comparison_slider(before: str, after: str, uid: str = "cmp") -> str:
-    # The frame is capped rather than filling the column. `width:100%` on a
-    # 224x224 sample stretched it to 1092x1092 — a 4.9x upscale of a small
-    # image, wrapped in a 1094px-tall block that was mostly empty. 560px keeps
-    # the upscale modest and the whole control on screen at once.
-    return f"""
-<div style="margin:12px auto 6px;max-width:560px;">
-  <div id="w_{uid}" style="position:relative;overflow:hidden;border-radius:var(--r-lg);cursor:col-resize;
-       user-select:none;border:1px solid {T['border']};" role="group" aria-label="Before and after comparison">
-    <img src="data:image/png;base64,{after}" alt="After" style="width:100%;display:block;" draggable="false"/>
-    <div id="c_{uid}" style="position:absolute;inset:0 auto 0 0;width:50%;overflow:hidden;pointer-events:none;">
-      <img src="data:image/png;base64,{before}" alt="Before" style="width:200%;max-width:none;display:block;" draggable="false"/>
-    </div>
-    <div id="h_{uid}" style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:2px;
-         height:100%;background:rgba(255,255,255,.9);pointer-events:none;
-         box-shadow:0 0 8px rgba(0,201,167,.6);">
-      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;
-           background:{T['elevated']};border:2px solid rgba(0,201,167,.6);border-radius:50%;
-           box-shadow:0 0 16px rgba(0,201,167,.35),0 3px 12px rgba(0,0,0,.6);
-           display:flex;align-items:center;justify-content:center;">
-        <svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:{T['accent']};stroke-width:2.2;
-             stroke-linecap:round;stroke-linejoin:round;"><path d="m9 7-5 5 5 5M15 7l5 5-5 5"/></svg>
-      </div>
-    </div>
-    <span style="position:absolute;top:12px;left:12px;padding:4px 10px;border-radius:var(--r-xs);font-size:var(--fs-0);
-          font-weight:700;letter-spacing:.09em;color:{T['text']};background:rgba(7,11,20,.82);
-          border:1px solid rgba(255,255,255,.12);">BEFORE</span>
-    <span style="position:absolute;top:12px;right:12px;padding:4px 10px;border-radius:var(--r-xs);font-size:var(--fs-0);
-          font-weight:700;letter-spacing:.09em;color:{T['text']};background:rgba(7,11,20,.82);
-          border:1px solid rgba(255,255,255,.12);">AFTER</span>
-  </div>
-  <div style="text-align:center;font-size:var(--fs-1);color:{T['text_3']};margin-top:8px;">
-    Drag to compare · input on the left, filtered output on the right
-  </div>
-</div>
-<script>
-(function(){{
-  var w=document.getElementById('w_{uid}'),c=document.getElementById('c_{uid}'),
-      h=document.getElementById('h_{uid}'),d=false;
-  if(!w) return;
-  function go(x){{var r=w.getBoundingClientRect(),p=Math.min(.99,Math.max(.01,(x-r.left)/r.width));
-    c.style.width=(p*100)+'%';h.style.left=(p*100)+'%';}}
-  w.addEventListener('mousedown',function(e){{d=true;go(e.clientX);e.preventDefault();}});
-  document.addEventListener('mousemove',function(e){{if(d)go(e.clientX);}});
-  document.addEventListener('mouseup',function(){{d=false;}});
-  w.addEventListener('touchstart',function(e){{d=true;go(e.touches[0].clientX);}},{{passive:true}});
-  document.addEventListener('touchmove',function(e){{if(d)go(e.touches[0].clientX);}},{{passive:true}});
-  document.addEventListener('touchend',function(){{d=false;}});
-}})();
-</script>"""
+def comparison_slider(before: str, after: str, split: int = 50, uid: str = "cmp") -> str:
+    """A before/after wipe at `split` percent. NOT draggable, and it no longer
+    pretends to be.
+
+    This was built as a drag control: cursor:col-resize, a round grab handle
+    with arrows, and a caption reading "Drag to compare". The drag never
+    worked. Its handler shipped in a <script> tag inside the same
+    st.markdown(unsafe_allow_html=True) string, and Streamlit inserts that
+    markup as innerHTML — a script inserted that way is parsed into the DOM and
+    never executed. The tag was therefore present, which is why the code read
+    as correct, and dragging moved nothing, which is what it did for everyone
+    who tried it. Verified in the browser: a full synthetic
+    mousedown/mousemove/mouseup across the frame left the clip and the handle
+    at 50%.
+
+    The split is driven by a real st.slider in step3 now. That costs a server
+    round-trip per change, which is honest about what this build is, and the
+    control does what its label says.
+
+    The frame is capped rather than filling the column. `width:100%` on a
+    224x224 sample stretched it to 1092x1092 — a 4.9x upscale of a small
+    image, wrapped in a 1094px-tall block that was mostly empty. 560px keeps
+    the upscale modest and the whole control on screen at once.
+    """
+    pct = max(0, min(100, int(split)))
+    # The clipped BEFORE image is sized to the FRAME, not to the clip, so the
+    # two halves stay registered with each other as the wipe moves.
+    w = 560
+    return (
+        # The border lives on the OUTER wrapper, not the frame. On the frame it
+        # took 2px out of the content box, so the AFTER image (width:100%) came
+        # out 558px against the clipped BEFORE image's fixed 560px and the two
+        # halves sat 2px out of register — a visible step along the wipe seam.
+        f'<div style="margin:12px auto 6px;max-width:{w}px;border:1px solid {T["border"]};'
+        f'border-radius:var(--r-lg);overflow:hidden;">'
+        f'<div id="w_{uid}" style="position:relative;overflow:hidden;" role="img" '
+        f'aria-label="Noisy input and filtered output, wipe at {pct} percent">'
+        # object-fit:fill and image-rendering:pixelated are both required.
+        # Images here inherit object-fit:scale-down, which refuses to scale an
+        # image UP: a 224x224 sample in a 558px frame painted at 224px, centred
+        # in a mostly empty box, while getBoundingClientRect still reported the
+        # full 558 — the layout was right and only the pixels were wrong, which
+        # is why it reads as correct and looks broken. pixelated then keeps the
+        # upscale honest about being an upscale, matching the panels above.
+        f'<img src="data:image/png;base64,{after}" alt="Filtered output" '
+        f'style="width:100%;display:block;object-fit:fill;'
+        f'image-rendering:pixelated;" draggable="false"/>'
+        f'<div style="position:absolute;inset:0 auto 0 0;width:{pct}%;overflow:hidden;'
+        f'pointer-events:none;">'
+        # Sized by HEIGHT, not width. The clip is only `pct`% wide, so a
+        # width:100% here would squash the BEFORE image to the wipe position;
+        # a hardcoded pixel width instead drifts out of register with the
+        # AFTER image by however much border and rounding the frame spends —
+        # 2px, which shows as a step along the seam. Both images are laid out
+        # to the same height and keep their aspect ratio, so they register
+        # exactly at any frame width without a magic number.
+        f'<img src="data:image/png;base64,{before}" alt="Noisy input" '
+        f'style="position:absolute;top:0;left:0;height:100%;width:auto;'
+        f'aspect-ratio:1;max-width:none;display:block;object-fit:fill;'
+        f'image-rendering:pixelated;" draggable="false"/></div>'
+        f'<div style="position:absolute;top:0;left:{pct}%;transform:translateX(-50%);width:2px;'
+        f'height:100%;background:rgba(255,255,255,.9);pointer-events:none;'
+        f'box-shadow:0 0 8px rgba(0,201,167,.6);"></div>'
+        f'<span style="position:absolute;top:12px;left:12px;padding:4px 10px;'
+        f'border-radius:var(--r-xs);font-size:var(--fs-0);font-weight:700;letter-spacing:.09em;'
+        f'color:{T["text"]};background:rgba(7,11,20,.82);'
+        f'border:1px solid rgba(255,255,255,.12);">BEFORE</span>'
+        f'<span style="position:absolute;top:12px;right:12px;padding:4px 10px;'
+        f'border-radius:var(--r-xs);font-size:var(--fs-0);font-weight:700;letter-spacing:.09em;'
+        f'color:{T["text"]};background:rgba(7,11,20,.82);'
+        f'border:1px solid rgba(255,255,255,.12);">AFTER</span>'
+        f'</div></div>'
+        f'<div style="text-align:center;font-size:var(--fs-1);color:{T["text_3"]};'
+        f'margin:8px auto 0;max-width:{w}px;">'
+        f'Noisy input on the left, filtered output on the right.</div>'
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2238,7 +2264,12 @@ def step3(cfg) -> None:
         with c2:
             st.markdown(img_frame(b64(result.output), "Denoised output", badge(_flabel(result.selected_filter), fc)), unsafe_allow_html=True)
 
-    st.markdown(comparison_slider(b64(result.input), b64(result.output)), unsafe_allow_html=True)
+    # A control that actually moves the wipe. The drag handle this replaces
+    # never did — see comparison_slider's docstring.
+    split = st.slider("Wipe position", 0, 100, 50, 1, key="cmp_split", format="%d%%",
+                      help="Where the noisy input gives way to the filtered output.")
+    st.markdown(comparison_slider(b64(result.input), b64(result.output), split),
+                unsafe_allow_html=True)
 
     # ── metrics ──
     st.markdown(section("Quality metrics"), unsafe_allow_html=True)
