@@ -271,9 +271,31 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
    declaration — min/max-width alone are silently outranked. */
 [data-testid="stSidebar"] {{
   border-right: 1px solid rgba(99,130,170,0.15) !important;
+}}
+/* The width pin is scoped to the EXPANDED state, and the collapsed state is
+   given an explicit zero. Unscoped, the pin outranked Streamlit's own collapse
+   handling and the rail kept its 256px slot in the flex row after being
+   collapsed: the sidebar disappeared and the content did not move, leaving a
+   256px dead gutter on every page — 18% of a 1440px window, 29% of a 768px
+   one. The collapse control appeared to do nothing at all above 1100px. */
+[data-testid="stSidebar"][aria-expanded="true"] {{
   width: 256px !important; min-width: 256px !important; max-width: 256px !important;
   flex: 0 0 256px !important;
 }}
+/* Collapsed: removed from layout outright.
+   Everything gentler was tried and measured. `width:0 !important` loses to a
+   200px min-width floor Streamlit holds on the rail; adding `min-width:0` lost
+   too; absolute positioning reclaimed the width but the rail came back 1px
+   wide, because pinning the same properties Streamlit animates the collapse
+   with leaves the two rules disagreeing about which phase the transition is
+   in. display:none ends the argument — a box that is not laid out cannot hold
+   a slot — and re-expanding restores the rail to a full 224/256px with its nav
+   and status panel intact, which is the case the other attempts broke.
+   The cost is Streamlit's 300ms slide: the rail now disappears at once. That
+   is the trade for reclaiming 18-29% of the window on every page.
+   The expand control is a separate button outside the sidebar
+   (stExpandSidebarButton), so nothing is stranded when this hides. */
+[data-testid="stSidebar"][aria-expanded="false"] {{ display: none !important; }}
 /* The drag-to-resize handle is a control that cannot do anything: the rail is
    pinned to a fixed width with !important above, so a drag is overridden the
    moment it lands. It carries NO data-testid in this build, so the rule that
@@ -705,7 +727,9 @@ h1,h2,h3,h4 {{ color: var(--text); letter-spacing: -0.026em; font-weight: 700; }
   /* 224px, not 200px: the wordmark needs ~122px beside a 38px icon, and at
      200px "AdaptiveDenoise" wrapped onto two lines while "Processing History"
      truncated to an ellipsis. The brand also steps down a size here. */
-  [data-testid="stSidebar"][data-testid="stSidebar"] {{
+  /* Expanded-state only, for the same reason as the base rule above: a pin
+     that also applies while collapsed is what left the dead gutter. */
+  [data-testid="stSidebar"][data-testid="stSidebar"][aria-expanded="true"] {{
     width:224px !important; min-width:224px !important; max-width:224px !important;
     flex:0 0 224px !important;
   }}
