@@ -1573,14 +1573,25 @@ def sidebar(clf_ready: bool, hw) -> None:
     )
 
     for gi, (group, items) in enumerate(NAV_GROUPS):
-        st.sidebar.markdown(
-            f'<div class="nav-group{" nav-group-first" if gi == 0 else ""}">{group}</div>',
-            unsafe_allow_html=True,
-        )
-        for label, key in items:
+        for ii, (label, key) in enumerate(items):
             active = ss.nav == label
+            # The group heading is emitted INSIDE the first nav row's block, not
+            # as a block of its own. Streamlit under-reserves height for a
+            # markdown block holding a single element here: the heading measured
+            # 18px tall inside a container that reserved 8px, so it painted 10px
+            # past its own box and the nav row below started 10px too high —
+            # every group heading in the rail sat under the pill beneath it.
+            # (height:auto on the wrapper does not fix it; the height is not
+            # coming from a height property.) A block with more than one child
+            # sizes to its content, which is why the System panel lower down has
+            # never had this problem.
+            head = (
+                f'<div class="nav-group{" nav-group-first" if gi == 0 else ""}">{group}</div>'
+                if ii == 0 else ""
+            )
             st.sidebar.markdown(
-                f'<div class="nav-row {"nav-active" if active else "nav-idle"}" aria-hidden="true" '
+                head
+                + f'<div class="nav-row {"nav-active" if active else "nav-idle"}" aria-hidden="true" '
                 f'title="{esc(label)}">{ico(key,17)}<span class="nav-label">{esc(label)}</span></div>',
                 unsafe_allow_html=True,
             )
