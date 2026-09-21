@@ -14,7 +14,7 @@ streamlit>=1.30
 # Testing.
 pytest>=7.4
 
-# Machine-learning framework: install locally with the CUDA wheel from
-# https://pytorch.org. Not listed here because PyTorch (~2 GB) exceeds
-# Streamlit Community Cloud's install budget. The app gracefully degrades
-# when torch is absent.
+# Machine-learning framework — CPU-only wheel (~700 MB, fits Streamlit Cloud).
+# pip selects the CPU build automatically on Linux (the cloud host); locally
+# replace with the CUDA wheel from https://pytorch.org if a GPU is available.
+torch>=2.0
