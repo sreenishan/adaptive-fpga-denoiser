@@ -35,11 +35,15 @@ from ..preprocessing import load_image
 __all__ = [
     "StrategyResult",
     "ClassMetrics",
+    "LevelMetrics",
+    "DenoisingEvalReport",
     "EvalReport",
     "evaluate",
+    "evaluate_denoiser",
 ]
 
 STRATEGIES = ("no_filter", "fixed_median", "gt_adaptive", "cnn_adaptive")
+DENOISER_STRATEGIES = ("no_filter", "fixed_median", "gt_adaptive", "cnn_denoiser")
 NOISY_CLASSES = ("salt_pepper", "gaussian", "speckle")
 
 
@@ -310,6 +314,330 @@ def evaluate(
 
     return EvalReport(
         strategies=results,
+        n_test=n_test,
+        dataset_dir=str(dataset_dir),
+    )
+
+
+# ─── DnCNN evaluation (4-level paired dataset) ────────────────────────────────
+
+
+@dataclass
+class LevelMetrics:
+    """Metrics for one (noise_type, noise_level) combination."""
+
+    noise_type: str
+    noise_level: int
+    noise_parameter: float
+    n: int
+    mse: float
+    psnr: float
+    ssim: float
+    mse_delta: float = 0.0
+    psnr_delta: float = 0.0
+    ssim_delta: float = 0.0
+
+
+@dataclass
+class DenoisingEvalReport:
+    """Evaluation report for the paired (noisy, clean) denoising dataset.
+
+    Includes both per-class aggregates (for comparison with the classifier
+    report) and per-level breakdowns (4 levels × 3 noise types).
+    """
+
+    strategies: dict[str, StrategyResult] = field(default_factory=dict)
+    per_level: dict[str, list[LevelMetrics]] = field(default_factory=dict)
+    n_test: int = 0
+    dataset_dir: str = ""
+
+    def as_dict(self) -> dict[str, Any]:
+        base = {
+            "n_test": self.n_test,
+            "dataset_dir": self.dataset_dir,
+            "strategies": {
+                name: {
+                    "overall": {
+                        "mse": round(s.overall_mse, 4),
+                        "psnr": round(s.overall_psnr, 4),
+                        "ssim": round(s.overall_ssim, 4),
+                    },
+                    "per_class": [
+                        {
+                            "class": c.noise_class,
+                            "n": c.n,
+                            "mse": round(c.mse, 4),
+                            "psnr": round(c.psnr, 4),
+                            "ssim": round(c.ssim, 4),
+                            "mse_delta": round(c.mse_delta, 4),
+                            "psnr_delta": round(c.psnr_delta, 4),
+                            "ssim_delta": round(c.ssim_delta, 4),
+                        }
+                        for c in s.per_class
+                    ],
+                    "per_level": [
+                        {
+                            "noise_type": lv.noise_type,
+                            "noise_level": lv.noise_level,
+                            "noise_parameter": lv.noise_parameter,
+                            "n": lv.n,
+                            "mse": round(lv.mse, 4),
+                            "psnr": round(lv.psnr, 4),
+                            "ssim": round(lv.ssim, 4),
+                            "mse_delta": round(lv.mse_delta, 4),
+                            "psnr_delta": round(lv.psnr_delta, 4),
+                            "ssim_delta": round(lv.ssim_delta, 4),
+                        }
+                        for lv in self.per_level.get(name, [])
+                    ],
+                }
+                for name, s in self.strategies.items()
+            },
+        }
+        return base
+
+
+def _apply_denoiser_strategy(
+    noisy: np.ndarray,
+    noise_type: str,
+    strategy: str,
+    config: InferenceConfig,
+    inferencer: Any | None,
+) -> tuple[np.ndarray, str]:
+    """Return (output_image, filter_label) for the denoiser evaluation."""
+    filters_cfg = config.filters
+
+    if strategy == "no_filter":
+        return noisy.copy(), "bypass"
+
+    if strategy == "fixed_median":
+        out = apply_filter(noisy, "median", kernel_size=filters_cfg.median.kernel_size)
+        return out, "median"
+
+    if strategy == "gt_adaptive":
+        filt = FILTER_FOR_CLASS[noise_type]
+        params: dict[str, Any] = {}
+        if filt == "median":
+            params["kernel_size"] = filters_cfg.median.kernel_size
+        elif filt == "gaussian":
+            params["kernel_size"] = filters_cfg.gaussian.kernel_size
+            params["integer_kernel"] = True
+        elif filt == "wiener":
+            params["kernel_size"] = filters_cfg.wiener.kernel_size
+            params["noise_variance"] = filters_cfg.wiener.noise_variance
+        return apply_filter(noisy, filt, **params), filt
+
+    if strategy == "cnn_denoiser":
+        if inferencer is None:
+            raise ValueError("cnn_denoiser requires an inferencer")
+        return inferencer.denoise(noisy), "dncnn"
+
+    raise ValueError(f"unknown denoiser strategy: {strategy!r}")
+
+
+def evaluate_denoiser(
+    dataset_dir: str | Path,
+    config: InferenceConfig | None = None,
+    inferencer: Any | None = None,
+    *,
+    split: str = "test",
+    verbose: bool = True,
+) -> DenoisingEvalReport:
+    """Evaluate strategies on the 4-level paired (noisy, clean) denoising dataset.
+
+    This function reads the manifest produced by
+    :func:`~denoising.dataset.denoising_generate.generate_denoising_dataset`
+    (columns: ``noisy_path``, ``clean_path``, ``split``, ``source_id``,
+    ``noise_type``, ``noise_level``, ``noise_parameter``, ``seed``).
+
+    Args:
+        dataset_dir: Root of the denoising dataset (contains ``manifest.csv``).
+        config:      Inference config for classical filter parameters.
+        inferencer:  A :class:`~denoising.model.inference_denoiser.DnCNNInferencer`
+                     implementing ``denoise(image) -> image``.  When ``None``,
+                     the ``cnn_denoiser`` strategy is skipped.
+        split:       Dataset split to evaluate.
+        verbose:     Print progress.
+
+    Returns:
+        :class:`DenoisingEvalReport` with per-class and per-level metrics.
+    """
+    if config is None:
+        config = load_inference_config()
+
+    dataset_dir = Path(dataset_dir)
+    manifest_path = dataset_dir / "manifest.csv"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"manifest not found: {manifest_path}")
+
+    manifest = pd.read_csv(manifest_path)
+
+    test_rows = manifest[manifest["split"] == split].reset_index(drop=True)
+    n_test = len(test_rows)
+    if verbose:
+        print(f"Evaluating {n_test} {split} image pairs …")
+
+    active_strategies = list(DENOISER_STRATEGIES)
+    if inferencer is None:
+        active_strategies = [s for s in active_strategies if s != "cnn_denoiser"]
+
+    raw: dict[str, list[dict[str, Any]]] = {s: [] for s in active_strategies}
+
+    for idx, row in test_rows.iterrows():
+        noise_type = str(row["noise_type"])
+        noise_level = int(row["noise_level"])
+        noise_parameter = float(row["noise_parameter"])
+        noisy_path = Path(row["noisy_path"])
+        clean_path = Path(row["clean_path"])
+
+        if not noisy_path.is_absolute():
+            noisy_path = dataset_dir / noisy_path
+        if not clean_path.is_absolute():
+            clean_path = dataset_dir / clean_path
+
+        try:
+            noisy = load_image(noisy_path)
+            clean = load_image(clean_path)
+        except Exception:
+            continue
+
+        if noisy.shape != clean.shape:
+            continue
+
+        for strategy in active_strategies:
+            try:
+                output, filt_used = _apply_denoiser_strategy(
+                    noisy, noise_type, strategy, config, inferencer
+                )
+                q = calculate_quality(output, clean)
+                raw[strategy].append({
+                    "source_id": row["source_id"],
+                    "noise_type": noise_type,
+                    "noise_level": noise_level,
+                    "noise_parameter": noise_parameter,
+                    "filter_used": filt_used,
+                    "mse": q.mse,
+                    "psnr": q.psnr,
+                    "ssim": q.ssim,
+                })
+            except Exception as exc:
+                if verbose:
+                    print(f"  [{strategy}] {noisy_path.name}: {exc}")
+
+        if verbose and (int(idx) + 1) % 50 == 0:
+            print(f"  {int(idx) + 1}/{n_test} done")
+
+    # Aggregate into StrategyResult + per-level breakdown
+    results: dict[str, StrategyResult] = {}
+    per_level: dict[str, list[LevelMetrics]] = {}
+    no_filter_by_key: dict[tuple[str, int], dict[str, float]] = {}
+
+    # Build no_filter baseline first
+    for rec in raw.get("no_filter", []):
+        key = (rec["noise_type"], rec["noise_level"])
+        if key not in no_filter_by_key:
+            no_filter_by_key[key] = {"mse": [], "psnr": [], "ssim": []}
+        no_filter_by_key[key]["mse"].append(rec["mse"])
+        no_filter_by_key[key]["psnr"].append(rec["psnr"])
+        no_filter_by_key[key]["ssim"].append(rec["ssim"])
+
+    baseline_level: dict[tuple[str, int], dict[str, float]] = {
+        k: {
+            "mse": float(np.mean(v["mse"])),
+            "psnr": _mean_finite(v["psnr"]),
+            "ssim": float(np.mean(v["ssim"])),
+        }
+        for k, v in no_filter_by_key.items()
+    }
+
+    for strategy in active_strategies:
+        records = raw[strategy]
+        if not records:
+            continue
+
+        all_mse = [r["mse"] for r in records]
+        all_psnr = [r["psnr"] for r in records if r["psnr"] < 1e15]
+        all_ssim = [r["ssim"] for r in records]
+
+        # Per-class aggregates (3 noise types)
+        per_class: list[ClassMetrics] = []
+        for cls in NOISY_CLASSES:
+            cls_recs = [r for r in records if r["noise_type"] == cls]
+            if not cls_recs:
+                continue
+            mse_v = [r["mse"] for r in cls_recs]
+            psnr_v = [r["psnr"] for r in cls_recs if r["psnr"] < 1e15]
+            ssim_v = [r["ssim"] for r in cls_recs]
+
+            base_cls = [r for r in raw.get("no_filter", []) if r["noise_type"] == cls]
+            base_mse = float(np.mean([r["mse"] for r in base_cls])) if base_cls else float(np.mean(mse_v))
+            base_psnr = _mean_finite([r["psnr"] for r in base_cls if r["psnr"] < 1e15]) if base_cls else _mean_finite(psnr_v)
+            base_ssim = float(np.mean([r["ssim"] for r in base_cls])) if base_cls else float(np.mean(ssim_v))
+
+            avg_mse = float(np.mean(mse_v))
+            avg_psnr = _mean_finite(psnr_v)
+            avg_ssim = float(np.mean(ssim_v))
+
+            per_class.append(ClassMetrics(
+                noise_class=cls,
+                n=len(cls_recs),
+                mse=avg_mse,
+                psnr=avg_psnr,
+                ssim=avg_ssim,
+                mse_delta=avg_mse - base_mse,
+                psnr_delta=avg_psnr - base_psnr,
+                ssim_delta=avg_ssim - base_ssim,
+            ))
+
+        # Per-level breakdown (4 levels × 3 types = 12 rows per strategy)
+        level_metrics: list[LevelMetrics] = []
+        levels_seen: list[tuple[str, int]] = sorted(
+            {(r["noise_type"], r["noise_level"]) for r in records}
+        )
+        for (noise_type, noise_level) in levels_seen:
+            lv_recs = [
+                r for r in records
+                if r["noise_type"] == noise_type and r["noise_level"] == noise_level
+            ]
+            if not lv_recs:
+                continue
+            mse_v = [r["mse"] for r in lv_recs]
+            psnr_v = [r["psnr"] for r in lv_recs if r["psnr"] < 1e15]
+            ssim_v = [r["ssim"] for r in lv_recs]
+            param = lv_recs[0]["noise_parameter"]
+
+            avg_mse = float(np.mean(mse_v))
+            avg_psnr = _mean_finite(psnr_v)
+            avg_ssim = float(np.mean(ssim_v))
+
+            base = baseline_level.get((noise_type, noise_level), {})
+            level_metrics.append(LevelMetrics(
+                noise_type=noise_type,
+                noise_level=noise_level,
+                noise_parameter=param,
+                n=len(lv_recs),
+                mse=avg_mse,
+                psnr=avg_psnr,
+                ssim=avg_ssim,
+                mse_delta=avg_mse - base.get("mse", avg_mse),
+                psnr_delta=avg_psnr - base.get("psnr", avg_psnr),
+                ssim_delta=avg_ssim - base.get("ssim", avg_ssim),
+            ))
+
+        results[strategy] = StrategyResult(
+            strategy=strategy,
+            n_total=len(records),
+            overall_mse=float(np.mean(all_mse)) if all_mse else float("nan"),
+            overall_psnr=_mean_finite(all_psnr),
+            overall_ssim=float(np.mean(all_ssim)) if all_ssim else float("nan"),
+            per_class=per_class,
+            records=records,
+        )
+        per_level[strategy] = level_metrics
+
+    return DenoisingEvalReport(
+        strategies=results,
+        per_level=per_level,
         n_test=n_test,
         dataset_dir=str(dataset_dir),
     )

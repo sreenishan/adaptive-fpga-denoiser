@@ -55,6 +55,7 @@ from denoising.noise import (  # noqa: E402
     add_speckle_noise,
 )
 from denoising.pipeline import process_image  # noqa: E402
+from denoising.pipeline.denoising_pipeline import process_image_denoiser  # noqa: E402
 from denoising.preprocessing import to_grayscale  # noqa: E402
 
 # Why the classifier is unavailable, kept rather than discarded. "Not trained"
@@ -2068,33 +2069,45 @@ def step2(cfg, clf, clf_ready: bool) -> None:
         )
 
     with right:
-        use_ai = clf_ready and ss.use_ai
-        if use_ai:
-            ph = st.empty()
-            ph.markdown(
-                card(
-                    f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
-                    f'<div style="width:15px;height:15px;border:2px solid {T["accent"]};'
-                    f'border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;"></div>'
-                    f'<span style="font-size:var(--fs-2);color:{T["text_2"]};">Classifying noise…</span></div>'
-                    f'<div class="skel" style="height:11px;width:60%;margin-bottom:9px;"></div>'
-                    f'<div class="skel" style="height:11px;width:85%;margin-bottom:9px;"></div>'
-                    f'<div class="skel" style="height:11px;width:45%;"></div>'
-                ),
-                unsafe_allow_html=True,
-            )
-            result = process_image(img, cfg, classifier=clf, reference=ref)
-            ph.empty()
+        # Method selector: classical pipeline vs DnCNN denoiser
+        _dn_ckpt_path = __import__("pathlib").Path(__file__).resolve().parents[1] / "models" / "checkpoints" / "denoiser.pt"
+        _dn_available = _dn_ckpt_path.exists()
+        _method_opts = ["Classical (adaptive filter)"]
+        if _dn_available:
+            _method_opts.append("DnCNN denoiser")
+        _method = st.selectbox("Denoising method", _method_opts, key="denoising_method",
+                               help="DnCNN is available only after training (python scripts/train_denoiser.py).")
+
+        if _method == "DnCNN denoiser" and _dn_available:
+            result = process_image_denoiser(img, checkpoint=_dn_ckpt_path, clean_reference=ref)
         else:
-            if not clf_ready:
-                st.markdown(
-                    alert(f"No automatic classification — {_clf_short()}",
-                          f"{_clf_detail()} Choose the noise class manually below.", "warning"),
+            use_ai = clf_ready and ss.use_ai
+            if use_ai:
+                ph = st.empty()
+                ph.markdown(
+                    card(
+                        f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
+                        f'<div style="width:15px;height:15px;border:2px solid {T["accent"]};'
+                        f'border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;"></div>'
+                        f'<span style="font-size:var(--fs-2);color:{T["text_2"]};">Classifying noise…</span></div>'
+                        f'<div class="skel" style="height:11px;width:60%;margin-bottom:9px;"></div>'
+                        f'<div class="skel" style="height:11px;width:85%;margin-bottom:9px;"></div>'
+                        f'<div class="skel" style="height:11px;width:45%;"></div>'
+                    ),
                     unsafe_allow_html=True,
                 )
-            idx = CLASSES.index(truth) if truth in CLASSES else 1
-            mc = st.selectbox("Noise class", list(CLASSES), index=idx, format_func=_label)
-            result = process_image(img, cfg, noise_class=mc, reference=ref)
+                result = process_image(img, cfg, classifier=clf, reference=ref)
+                ph.empty()
+            else:
+                if not clf_ready:
+                    st.markdown(
+                        alert(f"No automatic classification — {_clf_short()}",
+                              f"{_clf_detail()} Choose the noise class manually below.", "warning"),
+                        unsafe_allow_html=True,
+                    )
+                idx = CLASSES.index(truth) if truth in CLASSES else 1
+                mc = st.selectbox("Noise class", list(CLASSES), index=idx, format_func=_label)
+                result = process_image(img, cfg, noise_class=mc, reference=ref)
 
         ss.result = result
         flow_slot.markdown(pipeline_flow(result, ss.source_kind, complete=False), unsafe_allow_html=True)

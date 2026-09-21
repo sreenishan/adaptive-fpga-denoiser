@@ -1,0 +1,25 @@
+# DnCNN denoiser training configuration.
+# Separate from configs/training.yaml, which drives the noise classifier.
+
+model:
+  depth: 17             # number of conv layers
+  filters: 64           # channels in hidden layers
+  input_channels: 1     # grayscale
+
+training:
+  batch_size: 16
+  epochs: 50
+  learning_rate: 0.001
+  weight_decay: 0.0
+  optimizer: adam       # adam | adamw | sgd
+  scheduler: null       # null | cosine | step | plateau
+  seed: 42
+  device: auto          # auto | cpu | cuda
+  num_workers: 0
+  resume: false
+  checkpoint_path: models/checkpoints/denoiser.pt
+  metadata_path: models/metadata/denoiser_result.json
+  early_stopping:
+    enabled: true
+    patience: 8
+    min_delta: 0.0

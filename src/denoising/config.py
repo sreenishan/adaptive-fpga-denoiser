@@ -52,6 +52,16 @@ __all__ = [
     "load_training_config",
     "load_inference_config",
     "load_hardware_config",
+    # Denoising additions
+    "DENOISING_NOISE_TYPES",
+    "DENOISING_LEVELS",
+    "DenoisingNoiseConfig",
+    "DenoisingDatasetPaths",
+    "DenoisingDatasetConfig",
+    "DnCNNModelConfig",
+    "DenoisingTrainingConfig",
+    "load_denoising_dataset_config",
+    "load_denoising_training_config",
 ]
 
 #: The four classes the system distinguishes, in label-index order. A class's
@@ -847,3 +857,235 @@ def load_hardware_config(
 ) -> HardwareConfig:
     """Load ``configs/hardware.yaml``, or *path* if given."""
     return HardwareConfig.from_mapping(load_yaml(path or CONFIG_DIR / "hardware.yaml"), root=root)
+
+
+# --------------------------------------------------------------------------- #
+# Denoising dataset config  (configs/denoising_dataset.yaml)
+# --------------------------------------------------------------------------- #
+
+#: Noise type names for the denoising experiment (same order used in manifests).
+DENOISING_NOISE_TYPES: Final[tuple[str, ...]] = ("salt_pepper", "gaussian", "speckle")
+
+#: The four percentage levels (display labels only; actual parameter values
+#: are computed per noise type).
+DENOISING_LEVELS: Final[tuple[int, ...]] = (5, 10, 15, 20)
+
+
+@dataclass(frozen=True)
+class DenoisingNoiseConfig:
+    """Four-level noise parameters for the denoising dataset."""
+
+    levels: tuple[int, ...]           # percentage labels e.g. (5, 10, 15, 20)
+    salt_pepper_amounts: tuple[float, ...]
+    salt_vs_pepper: float
+    gaussian_mean: float
+    gaussian_sigmas: tuple[float, ...]
+    speckle_variances: tuple[float, ...]
+
+    @classmethod
+    def from_mapping(
+        cls, data: Mapping[str, Any], where: str = "noise"
+    ) -> "DenoisingNoiseConfig":
+        levels_raw = _get(data, "levels", where)
+        if not isinstance(levels_raw, (list, tuple)) or not levels_raw:
+            raise ConfigError(f"'{where}.levels' must be a non-empty list of integers")
+        levels = tuple(int(v) for v in levels_raw)
+
+        sp = _section(data, "salt_pepper", where)
+        amounts = _float_list(sp, "amounts", f"{where}.salt_pepper", minimum=0.0, maximum=1.0)
+        if len(amounts) != len(levels):
+            raise ConfigError(
+                f"'{where}.salt_pepper.amounts' must have {len(levels)} entries, "
+                f"one per level; got {len(amounts)}"
+            )
+
+        gauss = _section(data, "gaussian", where)
+        sigmas = _float_list(gauss, "sigmas", f"{where}.gaussian", minimum=0.0, maximum=2.0)
+        if len(sigmas) != len(levels):
+            raise ConfigError(
+                f"'{where}.gaussian.sigmas' must have {len(levels)} entries; got {len(sigmas)}"
+            )
+
+        speckle = _section(data, "speckle", where)
+        variances = _float_list(
+            speckle, "variances", f"{where}.speckle", minimum=0.0, maximum=1.0
+        )
+        if len(variances) != len(levels):
+            raise ConfigError(
+                f"'{where}.speckle.variances' must have {len(levels)} entries; "
+                f"got {len(variances)}"
+            )
+
+        return cls(
+            levels=levels,
+            salt_pepper_amounts=amounts,
+            salt_vs_pepper=_float(sp, "salt_vs_pepper", f"{where}.salt_pepper",
+                                  minimum=0.0, maximum=1.0),
+            gaussian_mean=_float(gauss, "mean", f"{where}.gaussian"),
+            gaussian_sigmas=sigmas,
+            speckle_variances=variances,
+        )
+
+    def parameters_for(self, noise_type: str, level_index: int) -> dict[str, float]:
+        """Return the generator kwargs for one (noise_type, level_index) pair."""
+        if noise_type == "salt_pepper":
+            return {
+                "amount": self.salt_pepper_amounts[level_index],
+                "salt_vs_pepper": self.salt_vs_pepper,
+            }
+        if noise_type == "gaussian":
+            return {
+                "mean": self.gaussian_mean,
+                "sigma": self.gaussian_sigmas[level_index],
+            }
+        if noise_type == "speckle":
+            return {"variance": self.speckle_variances[level_index]}
+        raise ValueError(f"unknown noise type {noise_type!r}")
+
+    def primary_parameter(self, noise_type: str, level_index: int) -> float:
+        """The single most-descriptive parameter for display and the manifest."""
+        if noise_type == "salt_pepper":
+            return self.salt_pepper_amounts[level_index]
+        if noise_type == "gaussian":
+            return self.gaussian_sigmas[level_index]
+        if noise_type == "speckle":
+            return self.speckle_variances[level_index]
+        raise ValueError(f"unknown noise type {noise_type!r}")
+
+
+@dataclass(frozen=True)
+class DenoisingDatasetPaths:
+    """File-system locations for the denoising dataset."""
+
+    raw_dir: Path
+    dataset_dir: Path
+    manifest: Path
+
+    @classmethod
+    def from_mapping(
+        cls, data: Mapping[str, Any], where: str, *, root: Path
+    ) -> "DenoisingDatasetPaths":
+        return cls(
+            raw_dir=_path(data, "raw_dir", where, root=root),
+            dataset_dir=_path(data, "dataset_dir", where, root=root),
+            manifest=_path(data, "manifest", where, root=root),
+        )
+
+
+@dataclass(frozen=True)
+class DenoisingDatasetConfig:
+    """Contents of ``configs/denoising_dataset.yaml``."""
+
+    image: ImageConfig
+    split: SplitConfig
+    noise: DenoisingNoiseConfig
+    paths: DenoisingDatasetPaths
+
+    @classmethod
+    def from_mapping(
+        cls, data: Mapping[str, Any], *, root: Path = PROJECT_ROOT
+    ) -> "DenoisingDatasetConfig":
+        return cls(
+            image=ImageConfig.from_mapping(_section(data, "image", "")),
+            split=SplitConfig.from_mapping(_section(data, "split", "")),
+            noise=DenoisingNoiseConfig.from_mapping(_section(data, "noise", "")),
+            paths=DenoisingDatasetPaths.from_mapping(
+                _section(data, "paths", ""), "paths", root=root
+            ),
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Denoising training config  (configs/denoising_training.yaml)
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class DnCNNModelConfig:
+    """DnCNN architecture parameters."""
+
+    depth: int
+    filters: int
+    input_channels: int
+
+    @classmethod
+    def from_mapping(cls, data: Mapping[str, Any], where: str = "model") -> "DnCNNModelConfig":
+        depth = _int(data, "depth", where, minimum=3)
+        if depth % 2 == 0:
+            raise ConfigError(f"'{where}.depth' should be odd (layer 1 + N×hidden + last); got {depth}")
+        return cls(
+            depth=depth,
+            filters=_int(data, "filters", where, minimum=1),
+            input_channels=_int(data, "input_channels", where, minimum=1),
+        )
+
+
+@dataclass(frozen=True)
+class DenoisingTrainingConfig:
+    """Contents of ``configs/denoising_training.yaml``."""
+
+    model: DnCNNModelConfig
+    batch_size: int
+    epochs: int
+    learning_rate: float
+    weight_decay: float
+    optimizer: str
+    scheduler: str | None
+    seed: int
+    device: str
+    num_workers: int
+    resume: bool
+    checkpoint_path: Path
+    metadata_path: Path
+    early_stopping: EarlyStoppingConfig
+
+    @classmethod
+    def from_mapping(
+        cls, data: Mapping[str, Any], *, root: Path = PROJECT_ROOT
+    ) -> "DenoisingTrainingConfig":
+        where = "training"
+        training = _section(data, "training", "")
+        scheduler = training.get("scheduler")
+        if isinstance(scheduler, str):
+            scheduler = scheduler.lower()
+        if scheduler not in _SCHEDULERS:
+            names = ", ".join("null" if s is None else str(s) for s in _SCHEDULERS)
+            raise ConfigError(f"'{where}.scheduler' must be one of [{names}], got {scheduler!r}")
+        return cls(
+            model=DnCNNModelConfig.from_mapping(_section(data, "model", "")),
+            batch_size=_int(training, "batch_size", where, minimum=1),
+            epochs=_int(training, "epochs", where, minimum=1),
+            learning_rate=_float(
+                training, "learning_rate", where, minimum=0.0, exclusive_min=True
+            ),
+            weight_decay=_float(training, "weight_decay", where, minimum=0.0),
+            optimizer=_choice(training, "optimizer", where, _OPTIMIZERS),
+            scheduler=scheduler,
+            seed=_int(training, "seed", where, minimum=0),
+            device=_choice(training, "device", where, _DEVICES),
+            num_workers=_int(training, "num_workers", where, minimum=0),
+            resume=_bool(training, "resume", where),
+            checkpoint_path=_path(training, "checkpoint_path", where, root=root),
+            metadata_path=_path(training, "metadata_path", where, root=root),
+            early_stopping=EarlyStoppingConfig.from_mapping(
+                _section(training, "early_stopping", where), f"{where}.early_stopping"
+            ),
+        )
+
+
+def load_denoising_dataset_config(
+    path: Path | str | None = None, *, root: Path = PROJECT_ROOT
+) -> DenoisingDatasetConfig:
+    """Load ``configs/denoising_dataset.yaml``, or *path* if given."""
+    return DenoisingDatasetConfig.from_mapping(
+        load_yaml(path or CONFIG_DIR / "denoising_dataset.yaml"), root=root
+    )
+
+
+def load_denoising_training_config(
+    path: Path | str | None = None, *, root: Path = PROJECT_ROOT
+) -> DenoisingTrainingConfig:
+    """Load ``configs/denoising_training.yaml``, or *path* if given."""
+    return DenoisingTrainingConfig.from_mapping(
+        load_yaml(path or CONFIG_DIR / "denoising_training.yaml"), root=root
+    )
