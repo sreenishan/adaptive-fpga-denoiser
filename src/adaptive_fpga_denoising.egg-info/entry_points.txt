@@ -1,0 +1,4 @@
+[console_scripts]
+denoising-check-config = denoising.cli:main
+denoising-generate-dataset = denoising.dataset.cli:main
+denoising-train = denoising.model.train_cli:main

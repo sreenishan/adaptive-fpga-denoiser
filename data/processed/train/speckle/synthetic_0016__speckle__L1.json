@@ -1,0 +1,11 @@
+{
+  "class": "speckle",
+  "label": 3,
+  "noise_parameters": {
+    "variance": 0.06
+  },
+  "seed": 4250212766,
+  "source": "synthetic",
+  "source_id": "synthetic_0016",
+  "split": "train"
+}

@@ -1,0 +1,31 @@
+# Dataset generation and splitting.
+# Starting values, not experimental results. All paths are relative to the
+# repository root and are resolved there by src/denoising/config.py.
+
+image:
+  width: 224
+  height: 224
+  grayscale: true
+
+split:
+  train_ratio: 0.70
+  validation_ratio: 0.15
+  test_ratio: 0.15
+  seed: 42
+
+# Noise intensities are ranges, never a single fixed level, so the classifier
+# does not learn "loud = noisy". Ordered low / medium / high.
+noise:
+  salt_pepper:
+    amounts: [0.02, 0.05, 0.10]
+    salt_vs_pepper: 0.5
+  gaussian:
+    mean: 0.0
+    sigmas: [0.03, 0.06, 0.10]
+  speckle:
+    variances: [0.03, 0.06, 0.10]
+
+paths:
+  raw_dir: data/raw
+  generated_dir: data/generated
+  manifest: data/generated/manifest.csv

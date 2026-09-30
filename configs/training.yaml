@@ -1,0 +1,25 @@
+# Classifier architecture and training loop.
+
+model:
+  num_classes: 4          # must equal len(denoising.config.CLASSES)
+  input_channels: 1       # grayscale
+  base_channels: 16
+  dropout: 0.2
+
+training:
+  batch_size: 32
+  epochs: 30
+  learning_rate: 0.001
+  weight_decay: 0.0
+  optimizer: adam         # adam | adamw | sgd
+  scheduler: null         # null | cosine | step | plateau
+  seed: 42
+  device: auto            # auto | cpu | cuda
+  num_workers: 0
+  resume: false
+  checkpoint_dir: models/checkpoints
+  metadata_dir: models/metadata
+  early_stopping:
+    enabled: true
+    patience: 5
+    min_delta: 0.0

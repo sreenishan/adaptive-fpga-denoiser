@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Generated data and model artefacts are reproducible from the configs and
+# seeds; they are not committed.
+data/raw/**
+data/generated/**
+data/references/**
+models/checkpoints/**
+models/exported/**
+models/metadata/**
+simulation/input/**
+simulation/output/**
+simulation/expected/**
+results/classifier/**
+results/denoising/**
+results/rtl/**
+results/hardware/**
+# Re-include directories so git can descend into them and find the keep-files
+# below; without this, a nested .gitkeep stays invisible.
+!**/
+!**/.gitkeep
+
+# RTL / EDA tool output
+*.vvp
+*.vcd
+*.fst
+obj_dir/
+fpga/vivado/*
+fpga/quartus/*
+!fpga/vivado/.gitkeep
+!fpga/quartus/.gitkeep
+*.jou
+*.log
+!results/**/simulation_logs/*.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code dev tooling — not needed in the deployed repo
+.claude/
+
+# Scratch / compiled artefacts at repo root
+a.out
+hello.sv
+hello.vvp

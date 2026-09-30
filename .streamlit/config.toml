@@ -1,0 +1,22 @@
+# Streamlit's native theme. This exists so Streamlit's OWN widgets — selects,
+# inputs, sliders, tabs, the file uploader, toggles — adopt the design palette
+# directly, instead of being chased with per-widget CSS overrides keyed on
+# emotion class hashes that change between Streamlit releases.
+#
+# These five values must stay in step with the `T` token table at the top of
+# app/streamlit_app.py; they are the same palette expressed where Streamlit can
+# read it.
+
+[theme]
+base                     = "dark"
+primaryColor             = "#00C9A7"   # T["accent"]
+backgroundColor          = "#070B14"   # T["bg"]
+secondaryBackgroundColor = "#161C2B"   # T["elevated"]
+textColor                = "#E6EDF3"   # T["text"]
+font                     = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
