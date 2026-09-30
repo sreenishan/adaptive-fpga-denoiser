@@ -68,12 +68,11 @@ machine with no ML framework installed; a test asserts `torch` is absent from
 
 Python 3.12.10 with numpy, opencv, scipy, scikit-image, scikit-learn, pandas,
 matplotlib, pyyaml, pytest. **Icarus Verilog 12.0 is installed at
-`C:/iverilog/bin`, but NOT on PATH** — `scripts/simulate_rtl.py` and
-`tests/rtl/test_rtl_cosim.py` find it there; for `rtl/tb/run_tb.sh` export
-`PATH="/c/iverilog/bin:$PATH"` first. yosys 0.69 (oss-cad-suite) is at
-`C:/Users/ELCOT/tools/oss-cad-suite` — put its `bin` AND `lib` on PATH or the
-binaries fail on a missing DLL. No Verilator, Vivado or Quartus: synthesis so
-far is vendor-neutral only, and nothing has been fitted to a part.
+`C:/iverilog/bin` and is on PATH.** yosys 0.57 (oss-cad-suite) is at
+`C:/oss-cad-suite/oss-cad-suite` — both its `bin` AND `lib` are on PATH (the
+binaries fail on a missing DLL without `lib`). For `rtl/tb/run_tb.sh` export
+`PATH="/c/iverilog/bin:$PATH"` first. No Verilator, Vivado or Quartus: synthesis
+so far is vendor-neutral only, and nothing has been fitted to a part.
 
 PyTorch 2.13.0+cpu is installed. On 2026-09-11 Windows Application Control
 blocked its DLL (`import torch` -> "An Application Control policy has blocked
@@ -139,8 +138,8 @@ hardware tracks the software filter to within one grey level. Both are
 combinational control: change them between frames, not mid-frame. Turning
 `noise_var` back into a parameter would silently reopen a 6 dB gap.
 
-Done: vendor-neutral synthesis (2026-09-12). yosys 0.69 from oss-cad-suite
-(`C:/Users/ELCOT/tools/oss-cad-suite`, add its `bin` AND `lib` to PATH or the
+Done: vendor-neutral synthesis (2026-09-12). yosys 0.57 from oss-cad-suite
+(`C:/oss-cad-suite/oss-cad-suite`, add its `bin` AND `lib` to PATH or the
 binaries fail on a missing DLL) synthesises the design via
 `scripts/synthesize_rtl.py`: 3,608 LUTs and 3,691 FFs generic after the divider
 work below, table in `docs/hardware.md`. It found a latch that simulation cannot: `median_filter`
