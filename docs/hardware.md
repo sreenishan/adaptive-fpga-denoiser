@@ -131,7 +131,8 @@ nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 | Pipelined, 8 stages | 18.15 MHz | 4,343 | 0 | 15 |
 | Pipelined + reciprocal multiply | 30.23 MHz | 4,445 | 0 | 17 |
 | + BRAM line buffer | 30.91 MHz | 869 | 2 | 17 |
-| + filter_controller pre-register | **29.87 MHz** | **888** | **2** | 17 |
+| + filter_controller pre-register | 29.87 MHz | 888 | 2 | 17 |
+| + filter_controller win-input register | **36.51 MHz** | **963** | **2** | 17 |
 
 The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
 input path) and an output-accumulator register plus reciprocal multiply (breaks
@@ -140,21 +141,26 @@ reciprocal multiply `floor(acc / 2304) = (acc × 233017) >> 29` is verified
 exhaustively over every `acc` in 0..1,173,897 — so the 1 grey level budget is
 unchanged. Wiener total latency is now 10 cycles (8 restoring + 2 extra registers).
 
-The fifth row adds a pre-register (`comb_r`) in filter_controller breaking the
-old critical path (gaussian/median carry chain → CCU2C → comb_d[1], 33 ns).
-The critical path shifted to window_gen FF → gaussian/median arithmetic → comb_r,
-which has the same combinational depth, so Fmax is essentially unchanged (29.87
-vs 30.91 MHz, −3%). filter_controller total latency is now 12 cycles
-(1 pre-register + 10 delay-chain stages + 1 output register). TRELLIS_FF
-increased by 19 (19 extra registers: 8-bit comb_r + 2-bit sel_r + 1-bit vld_r +
-8-bit wiener_r = 19).
+The fifth row adds a comb pre-register (`comb_r`) in filter_controller. The old
+critical path (gaussian carry chain → CCU2C → comb_d[1], 33 ns) was cut, but
+the path shifted to window_gen FF → gaussian accumulator → comb_r — same
+combinational depth. Fmax essentially unchanged (29.87 vs 30.91 MHz, −3%).
+
+The sixth row adds a win-input register (`win_r`) in filter_controller.
+Registering `win_flat` (and `filter_sel`/`valid_in`) before the filter cores
+cuts the window_gen counter propagation (~3.5 ns of routing and LUT logic) from
+the critical path. The new critical path starts from `win_r` Q directly into the
+gaussian/median accumulator, without the window_gen overhead. Fmax: 29.87 →
+**36.51 MHz** (+22%). filter_controller total latency is now 13 cycles (1
+win-input + 1 comb pre-register + 10 delay-chain stages + 1 output register);
+PIPE_STAGES = 12 throughout the design. TRELLIS_FF: 888 → 963 (+75 for the 72-bit
+win_r + 2-bit sel_wr + 1-bit vld_wr).
 
 **This is an ECP5 number** — it is a like-for-like comparison on one part, not a
 claim about any target hardware.
 
-The current critical path (33.47 ns) is window_gen counter FF → window_gen LUT
-mux logic → gaussian_filter accumulator → filter_controller combinational carry
-chain → comb_r setup.
+The current critical path (~27 ns) is win_r Q → gaussian/median accumulator
+carry chain → comb_px mux → comb_r setup.
 
 **The reciprocal multiply uses 2 extra MULT18X18D blocks** (15 → 17 = 60% of
 28) and costs **2 extra flip-flops** in Wiener. The generic LUT count is higher
@@ -178,8 +184,8 @@ nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
-| LUT4 | 1,841 | 24,288 | 7% |
-| TRELLIS_FF | 888 | 24,288 | 3% |
+| LUT4 | 1,853 | 24,288 | 7% |
+| TRELLIS_FF | 963 | 24,288 | 3% |
 | DP16KD (BRAM18) | 2 | 56 | 3% |
 | MULT18X18D (DSP) | 17 | 28 | 60% |
 
@@ -200,24 +206,21 @@ From nextpnr-ecp5 0.9-2, `--freq 100 --lpf-allow-unconstrained`, seed 1.
 | Item | Value |
 |---|---|
 | Clock target | 100 MHz |
-| Achieved Fmax | 29.87 MHz |
+| Achieved Fmax | 36.51 MHz |
 | Timing closure | FAIL |
-| Critical path | window_gen FF → gaussian accumulator → filter_controller carry chain → `comb_r` (~33 ns) |
+| Critical path | `win_r` Q → gaussian/median accumulator carry chain → `comb_r` setup (~27 ns) |
 
 The design does not close timing at 100 MHz.  The `--lpf-allow-unconstrained`
 flag means the clock enters through a general I/O cell; a dedicated clock pin
-(LOCATE COMP "clk" SITE "...") would reduce I/O overhead but would not fix the
-combinational depth.
+(LOCATE COMP "clk" SITE "...") would reduce I/O overhead.
 
-The filter_controller pre-register (`comb_r`) broke the old path (gaussian output
-→ CCU2C → comb_d[1]), but the critical path shifted to the same combinational
-logic ending one register earlier, so Fmax is essentially unchanged.  The
-combinational depth from window_gen FF through the gaussian/median arithmetic to
-any register has not changed; to improve Fmax further, the arithmetic itself must
-be pipelined.
+The critical path is now inside filter_controller: `win_r` Q feeds directly into
+the gaussian/median accumulator carry chain, ending at `comb_r`.  To improve
+Fmax further, the arithmetic from `win_r` to `comb_r` must be broken.
 
 **Next steps to improve Fmax** (in order of likely impact):
-1. Pipeline the Gaussian accumulator (break the carry chain mid-accumulate).
+1. Pipeline the Gaussian accumulator — break the 9-input adder tree into two
+   stages (e.g. partial sums → register → final accumulate).
 2. Use a dedicated clock pin via a LOCATE constraint in `ecp5_25k.lpf`.
 3. Target a 45k or 85k ECP5 with a higher speed grade.
 

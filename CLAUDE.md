@@ -163,8 +163,8 @@ the critical paths on ECP5-25k: a pre-stage register after the window sums
 multiply for `acc / 2304` (broke the 49 ns carry-chain output path). Both are
 exact — the reciprocal multiply `floor(acc / 2304) = (acc × 233017) >> 29` is
 verified exhaustively over every `acc` in 0..1,173,897. Total Wiener latency is
-now 10 cycles (Wiener latency). ECP5 Fmax: 20.42 → **30.23 MHz** (48%
-improvement). LUT4: 2,052 → 1,835 (DSPs absorbed the multiply);
+now 10 cycles (Wiener latency). ECP5 Fmax at that stage: 20.42 → 30.23 MHz
+(48% improvement). LUT4: 2,052 → 1,835 (DSPs absorbed the multiply);
 MULT18X18D: 15 → 17 (2 DSPs for the reciprocal multiply).
 
 `acc / 2304` is now the reciprocal multiply on ECP5, where DSP blocks make it
@@ -186,18 +186,24 @@ at cycle N holds the pixel from WIDTH cycles ago, which is what window_gen's
 `always_ff` reads at the same posedge — same as the old shift-register tap.
 Do not add back an `initial` block; it will re-break BRAM inference.
 
-Done: filter_controller pre-register (2026-09-30). A `comb_r`/`sel_r`/`vld_r`
-register stage was added immediately after the combinational `comb_px` mux, and
-`wiener_r` was added after `wiener_px`, so all paths through filter_controller
-have total latency = 12 cycles (1 pre-reg + 10 delay chain + 1 output reg).
-`PIPE_STAGES` = 11 throughout the design. The old critical path (gaussian carry
-chain → CCU2C → comb_d[1], 33 ns) was cut, but the critical path shifted to
-window_gen FF → gaussian accumulator → filter_controller carry chain → comb_r
-(same combinational depth), so Fmax is effectively unchanged: 30.91 → **29.87
-MHz**. TRELLIS_FF: 869 → 888 (+19: 8 comb_r + 2 sel_r + 1 vld_r + 8 wiener_r).
-LUT4: 1,847 → 1,841 (minor routing change). The change is architecturally
-correct — comb_d[1] now has a clean single-FF drive — but does not improve Fmax.
-To improve further, the Gaussian accumulator carry chain must be pipelined.
+Done: filter_controller pre-register + win-input register (2026-09-30).
+
+First: a `comb_r`/`sel_r`/`vld_r` pre-register after the combinational
+`comb_px` mux. This broke the old 33 ns path (gaussian carry chain → comb_d[1])
+but the critical path shifted to window_gen FF → gaussian accumulator → comb_r
+(same combinational depth), so Fmax was essentially unchanged: 30.91 → 29.87 MHz.
+
+Second: a `win_r`/`sel_wr`/`vld_wr` input register in filter_controller,
+registering win_flat (and filter_sel/valid_in) before the filter cores. This
+cuts the ~3.5 ns window_gen counter propagation from the critical path. The new
+critical path starts from `win_r` Q: win_r → gaussian/median accumulator → comb_r.
+Fmax: 29.87 → **36.51 MHz** (+22%). TRELLIS_FF: 888 → 963 (+75 for win_r).
+filter_controller total latency = 13 cycles (1 win-input + 1 comb pre-reg + 10
+delay chain + 1 output). `PIPE_STAGES` = 12 throughout the design. All 5 unit
+benches and 6 slow RTL tests pass.
+
+The current critical path (~27 ns) is win_r Q → gaussian/median accumulator →
+comb_r. To improve Fmax further, pipeline the gaussian_filter adder tree.
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results

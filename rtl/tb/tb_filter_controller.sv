@@ -97,10 +97,10 @@ module tb_filter_controller;
     // ── Helpers ────────────────────────────────────────────────────────────
     int errors;
 
-    // Must match DIV_STAGES+2 in filter_controller.sv (1 pre-reg + DIV_STAGES delay + 1 output),
+    // Must match DIV_STAGES+3 in filter_controller.sv (win-input + comb pre-reg + DIV_STAGES + output),
     // plus the output register.
     localparam int DIV_STAGES = 10;
-    localparam int LATENCY    = DIV_STAGES + 2;
+    localparam int LATENCY    = DIV_STAGES + 3;
 
     // Drive one window for one cycle, then wait LATENCY cycles for it to come
     // out. valid_in is dropped immediately after the window is taken so exactly
