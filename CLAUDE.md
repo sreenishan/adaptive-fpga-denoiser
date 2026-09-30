@@ -163,10 +163,9 @@ the critical paths on ECP5-25k: a pre-stage register after the window sums
 multiply for `acc / 2304` (broke the 49 ns carry-chain output path). Both are
 exact — the reciprocal multiply `floor(acc / 2304) = (acc × 233017) >> 29` is
 verified exhaustively over every `acc` in 0..1,173,897. Total Wiener latency is
-now 10 cycles (`PIPE_STAGES = 10` throughout the design). ECP5 Fmax: 20.42 →
-**30.23 MHz** (48% improvement). The critical path is now in filter_controller's
-combinational mux (~33 ns), not Wiener. LUT4: 2,052 → 1,835 (DSPs absorbed the
-multiply); MULT18X18D: 15 → 17 (2 DSPs for the reciprocal multiply).
+now 10 cycles (Wiener latency). ECP5 Fmax: 20.42 → **30.23 MHz** (48%
+improvement). LUT4: 2,052 → 1,835 (DSPs absorbed the multiply);
+MULT18X18D: 15 → 17 (2 DSPs for the reciprocal multiply).
 
 `acc / 2304` is now the reciprocal multiply on ECP5, where DSP blocks make it
 faster. The constant `RECIP = 233017 = floor(2^29 / 2304)` and shift `RECIP_SHR
@@ -186,6 +185,19 @@ The timing contract with window_gen is unchanged: the registered BRAM output
 at cycle N holds the pixel from WIDTH cycles ago, which is what window_gen's
 `always_ff` reads at the same posedge — same as the old shift-register tap.
 Do not add back an `initial` block; it will re-break BRAM inference.
+
+Done: filter_controller pre-register (2026-09-30). A `comb_r`/`sel_r`/`vld_r`
+register stage was added immediately after the combinational `comb_px` mux, and
+`wiener_r` was added after `wiener_px`, so all paths through filter_controller
+have total latency = 12 cycles (1 pre-reg + 10 delay chain + 1 output reg).
+`PIPE_STAGES` = 11 throughout the design. The old critical path (gaussian carry
+chain → CCU2C → comb_d[1], 33 ns) was cut, but the critical path shifted to
+window_gen FF → gaussian accumulator → filter_controller carry chain → comb_r
+(same combinational depth), so Fmax is effectively unchanged: 30.91 → **29.87
+MHz**. TRELLIS_FF: 869 → 888 (+19: 8 comb_r + 2 sel_r + 1 vld_r + 8 wiener_r).
+LUT4: 1,847 → 1,841 (minor routing change). The change is architecturally
+correct — comb_d[1] now has a clean single-FF drive — but does not improve Fmax.
+To improve further, the Gaussian accumulator carry chain must be pipelined.
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results

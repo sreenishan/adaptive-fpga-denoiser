@@ -2,9 +2,9 @@
 //
 // Self-checking testbench for filter_controller.
 //
-// The controller is a mux + one pipeline register, behind a DIV_STAGES-deep
-// Wiener divider: a window presented now emerges LATENCY = DIV_STAGES+1 cycles
-// later, on every path. The combinational filters are delayed to match, which
+// The controller has a pre-register + DIV_STAGES delay chain + output register,
+// so a window presented now emerges LATENCY = DIV_STAGES+2 cycles later, on
+// every path (comb, sel, vld, and wiener_r all aligned). The combinational filters are delayed to match, which
 // is the property test 1-4 below would catch a regression in — if bypass came
 // out early it would be paired with the wrong pixel's Wiener result.
 //
@@ -97,10 +97,10 @@ module tb_filter_controller;
     // ── Helpers ────────────────────────────────────────────────────────────
     int errors;
 
-    // Must match DIV_STAGES in filter_controller.sv (wiener total latency = 10),
+    // Must match DIV_STAGES+2 in filter_controller.sv (1 pre-reg + DIV_STAGES delay + 1 output),
     // plus the output register.
     localparam int DIV_STAGES = 10;
-    localparam int LATENCY    = DIV_STAGES + 1;
+    localparam int LATENCY    = DIV_STAGES + 2;
 
     // Drive one window for one cycle, then wait LATENCY cycles for it to come
     // out. valid_in is dropped immediately after the window is taken so exactly

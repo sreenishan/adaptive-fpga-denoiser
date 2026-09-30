@@ -8,9 +8,12 @@
 //   2'b10 — gaussian
 //   2'b11 — wiener
 //
-// pixel_out is valid one cycle after filter_sel and the window arrive,
-// though all three filter cores are combinational; the register adds one
-// cycle of clean timing margin.
+// Pipeline structure (total latency = DIV_STAGES + 2 cycles):
+//   Stage 0  — pre-register: comb_px / filter_sel / valid_in → comb_r/sel_r/vld_r
+//              (breaks the Gaussian carry-chain → comb_d[1] critical path, ~33 ns)
+//   Stages 1..DIV_STAGES — delay chain aligning comb/sel/vld with the Wiener path
+//   wiener_r  — one extra register on the Wiener output to match the pre-register
+//   Output    — mux then pixel_out / valid_out register
 
 `default_nettype none
 
@@ -43,11 +46,12 @@ module filter_controller #(
     gaussian_filter #(.DEPTH(DEPTH))
         u_gaussian (.win_flat(win_flat), .gaussian_out(gaussian_px));
 
-    // Total pipeline latency of wiener_filter: STAGES(8) + pre-stage(1) +
-    // output-acc-stage(1) = 10. The delay chains for the combinational paths
-    // (comb_d, sel_d, vld_d) must match this so all paths emerge together.
+    // wiener_filter latency: STAGES(8) + pre-stage(1) + output-acc(1) = 10.
+    // An extra wiener_r register here adds 1 more cycle so all paths (comb,
+    // sel, vld, wiener) arrive at the mux DIV_STAGES+1 cycles after the window,
+    // then the output register adds one more — total latency = DIV_STAGES + 2.
     localparam int WIENER_STAGES = 8;   // restoring-division stages (wiener_filter param)
-    localparam int DIV_STAGES    = 10;  // total wiener pipeline latency
+    localparam int DIV_STAGES    = 10;  // wiener_filter latency; also delay-chain depth
 
     wiener_filter  #(.DEPTH(DEPTH), .NV_W(NV_W), .STAGES(WIENER_STAGES))
         u_wiener  (.clk(clk), .rst_n(rst_n), .en(en),
@@ -62,17 +66,28 @@ module filter_controller #(
 
     // Bypass, median and Gaussian are combinational: their answer for this
     // window is ready now, while the Wiener path is DIV_STAGES cycles behind.
-    // Muxing them together directly would combine results from different
-    // pixels, so the combinational answer, the selector and the valid all get
-    // delayed by the same depth. Delaying the 8-bit result rather than the
-    // 72-bit window is what keeps this cheap.
+    // Muxing them directly would combine results from different pixels, so the
+    // combinational answer, selector and valid are delayed to match.
     logic [DEPTH-1:0] comb_px;
     always_comb begin
         case (filter_sel)
             2'b01:   comb_px = median_px;
             2'b10:   comb_px = gaussian_px;
-            default: comb_px = centre;   // bypass; the wiener code is handled below
+            default: comb_px = centre;   // bypass; wiener handled below
         endcase
+    end
+
+    // Pre-register: comb_px comes through the Gaussian carry chain, which was
+    // the 33 ns critical path on ECP5-25k.  Registering it here cuts the path
+    // to roughly one FF clock-to-Q + routing.  sel_r and vld_r move in lockstep
+    // so the delay chain starting at comb_d[1] stays aligned.
+    logic [DEPTH-1:0] comb_r;
+    logic [1:0]       sel_r;
+    logic             vld_r;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin comb_r <= '0; sel_r <= 2'b00; vld_r <= 1'b0; end
+        else if (en) begin comb_r <= comb_px; sel_r <= filter_sel; vld_r <= valid_in; end
     end
 
     // Driven only by their always_ff blocks; see the note in wiener_filter.sv
@@ -87,9 +102,9 @@ module filter_controller #(
             sel_d[1]  <= 2'b00;
             vld_d[1]  <= 1'b0;
         end else if (en) begin
-            comb_d[1] <= comb_px;
-            sel_d[1]  <= filter_sel;
-            vld_d[1]  <= valid_in;
+            comb_d[1] <= comb_r;      // was: comb_px (direct)
+            sel_d[1]  <= sel_r;       // was: filter_sel (direct)
+            vld_d[1]  <= vld_r;       // was: valid_in (direct)
         end
     end
 
@@ -107,10 +122,19 @@ module filter_controller #(
         end
     end
 
+    // wiener_r adds the cycle that matches wiener_filter's DIV_STAGES output to
+    // the pre-registered comb/sel/vld paths.  All three paths meet at the mux
+    // DIV_STAGES+1 cycles after the window arrives.
+    logic [DEPTH-1:0] wiener_r;
+    always_ff @(posedge clk) begin
+        if (!rst_n) wiener_r <= '0;
+        else if (en) wiener_r <= wiener_px;
+    end
+
     // Everything here belongs to the same pixel: the Wiener pipeline output and
     // the delayed combinational one, chosen by the equally delayed selector.
     always_comb begin
-        mux_out = (sel_d[DIV_STAGES] == 2'b11) ? wiener_px : comb_d[DIV_STAGES];
+        mux_out = (sel_d[DIV_STAGES] == 2'b11) ? wiener_r : comb_d[DIV_STAGES];
     end
 
     always_ff @(posedge clk) begin
