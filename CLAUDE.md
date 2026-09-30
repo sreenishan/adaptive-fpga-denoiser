@@ -210,8 +210,18 @@ was not the critical path; nextpnr reports win_r Q → median_px CCU2C carry cha
 `PIPE_STAGES` = 13 throughout the design. All 5 unit benches and 6 slow RTL
 tests pass.
 
-The current critical path (~27 ns) is win_r Q → median_px CCU2C carry chain →
-comb_r. To improve Fmax further, pipeline the median comparator network.
+Done: median comparator pipeline (2026-09-30). `median_filter` gains
+clk/rst_n/en ports and a 1-cycle pipeline register splitting the 19-comparator
+network at the column-sort boundary: steps 1-9 (sort columns, 3 deep) →
+register → steps 10-19 (select median, 5 deep). The external `median_r`
+register in filter_controller's Stage G is absorbed here — net pipeline depth
+unchanged (PIPE_STAGES = 13, total latency = 14). Fmax: 36.65 → **49.15 MHz**
+(+34%). The median CCU2C carry chain is gone; nextpnr reports the critical path
+as `u_wiener.s_pre` Q → `den_v` → MULT18X18D input (~20 ns). TRELLIS_FF:
+1,015 → 1,079 (+64). All 5 unit benches and 6 slow RTL tests pass.
+
+The current critical path (~20 ns) is Wiener s_pre Q → den_v → MULT18X18D.
+To improve Fmax further, pipeline the Wiener variance computation.
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results

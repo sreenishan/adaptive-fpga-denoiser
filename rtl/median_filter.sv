@@ -1,46 +1,47 @@
 // median_filter.sv — Phase 16
 //
-// Combinational 3×3 median filter: the 19-comparator median-of-9 network
-// (Paeth, "Median Finding on a 3x3 Grid", Graphics Gems I).
+// Pipelined 3×3 median filter: the 19-comparator median-of-9 network
+// (Paeth, "Median Finding on a 3x3 Grid", Graphics Gems I), split into
+// two combinational stages separated by a pipeline register.
 //
-// WHY THIS NETWORK AND NOT A HAND-ROLLED ONE
-// ------------------------------------------
-// The previous implementation sorted p[0..3] and p[4..7] with two 4-sorters,
-// applied a bitonic half-cleaner across them, and then read the median off
-// t4[3] and t4[4]. That is wrong, and quietly so. A half-cleaner guarantees
-// only that every element of the lower half is <= every element of the upper
-// half; each half is left BITONIC, not sorted. So t4[3] is not max(lower) and
-// t4[4] is not min(upper), which is what the tail assumed. Brute-forcing the
-// old sequence over all 9! = 362880 orderings of nine distinct values returned
-// a value other than the true median on 299520 of them — 82.54%. On a real
-// salt-and-pepper image 72.6% of pixels were wrong, with a worst-case error of
-// 225 grey levels, against the bit-exact budget of 0 in configs/hardware.yaml.
+// Stage 1 (comb): sort each of the three columns — steps 1-9, 3 comparators deep.
+// Pipeline register: captures the nine sorted-column values.
+// Stage 2 (comb): find the median of the sorted columns — steps 10-19, 5 deep.
 //
-// The tail could not be patched: max(lower) and min(upper) were not present on
-// any wire it read. The network below replaces it wholesale and is verified to
-// zero mismatches over all 9! permutations, the exhaustive 4^9 duplicate space,
-// and 200000 random uint8 windows. Do not "optimise" a comparator out of it
-// without re-running that check — 19 is the smallest known correct network for
-// the median of nine, so any removal makes it wrong.
+// Latency: 1 clock cycle.  filter_controller.sv's Stage G absorbed the old
+// median_r register; moving it here keeps the pipeline depth unchanged
+// (PIPE_STAGES = 13 throughout the design).
 //
-// Each step is a compare-exchange: after CS(i,j) the SMALLER value is in v[i]
-// and the larger in v[j]. Note that steps 17 and 19 are written (4,2) and step
-// 18 is (6,4) — the descending index order is deliberate, not a typo. The
-// minimum always lands in the FIRST index named.
+// WHY THIS SPLIT
+// ---------------
+// The original single-stage always_comb was 8 comparators deep through v[4]
+// (~27 ns on ECP5 after win-input register, measured critical path).  The
+// column-sort / median-selection boundary is a natural cut: after step 9 the
+// three columns are independently sorted, and the 10 remaining comparators
+// operate on those sorted triples.  Stage 1: 3 deep; stage 2: 5 deep.
 //
-// Latency: fully combinational (0 clocks). Register the output in the caller if
-// timing requires; filter_controller.sv already does.
+// WHY NO TEMPORARY / NO LATCH
+// ----------------------------
+// A module-level temporary assigned only inside `if` branches causes yosys to
+// infer a latch and refuse synthesis.  Concatenated conditional swaps assign
+// BOTH sides unconditionally on every evaluation, so no latch is inferred.
+// 19 is the minimum correct comparator count; do not remove one.
+//
+// Each step is a compare-exchange: after CS(i,j) the smaller value is in v[i]
+// and the larger in v[j].  Steps 17 and 19 are written (4,2) and step 18 is
+// (6,4) — the descending index order is deliberate, not a typo.
 
 `default_nettype none
 
 module median_filter #(
     parameter int DEPTH = 8
 ) (
-    input  logic [3*3*DEPTH-1:0] win_flat,   // flat; element [r][c] = win_flat[(r*3+c)*DEPTH +: DEPTH]
-    output logic [DEPTH-1:0] median_out
+    input  logic               clk,
+    input  logic               rst_n,
+    input  logic               en,
+    input  logic [3*3*DEPTH-1:0] win_flat,
+    output logic [DEPTH-1:0]     median_out
 );
-    // Flatten the 3×3 window into 9 wires using the flat port directly.
-    // win_flat[(r*3+c)*DEPTH +: DEPTH] = element [r][c].
     logic [DEPTH-1:0] p [0:8];
     assign p[0] = win_flat[(0*3+0)*DEPTH +: DEPTH];
     assign p[1] = win_flat[(0*3+1)*DEPTH +: DEPTH];
@@ -52,36 +53,41 @@ module median_filter #(
     assign p[7] = win_flat[(2*3+1)*DEPTH +: DEPTH];
     assign p[8] = win_flat[(2*3+2)*DEPTH +: DEPTH];
 
-    // Working registers for the network. Blocking assignments inside
-    // always_comb execute in written order, so this describes exactly the
-    // 19-stage comparator cascade and synthesises to the same.
-    //
-    // Each stage is a concatenated conditional swap rather than the obvious
-    // three-line exchange through a temporary. A module-level temporary
-    // assigned only inside the `if` branches has to hold its value when no
-    // branch fires, so synthesis infers a LATCH for it and yosys refuses the
-    // design ("ERROR: Latch inferred for signal `t`"). Simulation never showed
-    // it — a variable holding its value is exactly what a simulator does.
-    // No temporary, no latch, same comparator network.
-    // tests/rtl/test_rtl_synth.py fails if this regresses.
-    logic [DEPTH-1:0] v [0:8];
-
+    // ── Stage 1 (comb): sort each column (steps 1-9, 3 comparators deep) ───
+    // Columns are independent so they are processed in column order rather than
+    // the interleaved order in the original — the hardware is identical.
+    logic [DEPTH-1:0] s [0:8];
     always_comb begin
-        for (int i = 0; i < 9; i++) v[i] = p[i];
+        for (int i = 0; i < 9; i++) s[i] = p[i];
+        // Column 0: p[0],p[1],p[2] → s[0]≤s[1]≤s[2]
+        {s[1], s[2]} = (s[1] > s[2]) ? {s[2], s[1]} : {s[1], s[2]};
+        {s[0], s[1]} = (s[0] > s[1]) ? {s[1], s[0]} : {s[0], s[1]};
+        {s[1], s[2]} = (s[1] > s[2]) ? {s[2], s[1]} : {s[1], s[2]};
+        // Column 1: p[3],p[4],p[5] → s[3]≤s[4]≤s[5]
+        {s[4], s[5]} = (s[4] > s[5]) ? {s[5], s[4]} : {s[4], s[5]};
+        {s[3], s[4]} = (s[3] > s[4]) ? {s[4], s[3]} : {s[3], s[4]};
+        {s[4], s[5]} = (s[4] > s[5]) ? {s[5], s[4]} : {s[4], s[5]};
+        // Column 2: p[6],p[7],p[8] → s[6]≤s[7]≤s[8]
+        {s[7], s[8]} = (s[7] > s[8]) ? {s[8], s[7]} : {s[7], s[8]};
+        {s[6], s[7]} = (s[6] > s[7]) ? {s[7], s[6]} : {s[6], s[7]};
+        {s[7], s[8]} = (s[7] > s[8]) ? {s[8], s[7]} : {s[7], s[8]};
+    end
 
-        // 1..3   sort the three column triples' middles
-        {v[1], v[2]} = (v[1] > v[2]) ? {v[2], v[1]} : {v[1], v[2]};
-        {v[4], v[5]} = (v[4] > v[5]) ? {v[5], v[4]} : {v[4], v[5]};
-        {v[7], v[8]} = (v[7] > v[8]) ? {v[8], v[7]} : {v[7], v[8]};
-        // 4..6
-        {v[0], v[1]} = (v[0] > v[1]) ? {v[1], v[0]} : {v[0], v[1]};
-        {v[3], v[4]} = (v[3] > v[4]) ? {v[4], v[3]} : {v[3], v[4]};
-        {v[6], v[7]} = (v[6] > v[7]) ? {v[7], v[6]} : {v[6], v[7]};
-        // 7..9   each triple is now sorted
-        {v[1], v[2]} = (v[1] > v[2]) ? {v[2], v[1]} : {v[1], v[2]};
-        {v[4], v[5]} = (v[4] > v[5]) ? {v[5], v[4]} : {v[4], v[5]};
-        {v[7], v[8]} = (v[7] > v[8]) ? {v[8], v[7]} : {v[7], v[8]};
-        // 10..12 discard the impossible extremes
+    // ── Pipeline register: capture sorted-column values ───────────────────
+    logic [DEPTH-1:0] q [0:8];
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            for (int i = 0; i < 9; i++) q[i] <= '0;
+        end else if (en) begin
+            for (int i = 0; i < 9; i++) q[i] <= s[i];
+        end
+    end
+
+    // ── Stage 2 (comb): median of sorted columns (steps 10-19, 5 deep) ────
+    logic [DEPTH-1:0] v [0:8];
+    always_comb begin
+        for (int i = 0; i < 9; i++) v[i] = q[i];
+        // 10..12: discard the impossible extremes
         {v[0], v[3]} = (v[0] > v[3]) ? {v[3], v[0]} : {v[0], v[3]};
         {v[5], v[8]} = (v[5] > v[8]) ? {v[8], v[5]} : {v[5], v[8]};
         {v[4], v[7]} = (v[4] > v[7]) ? {v[7], v[4]} : {v[4], v[7]};
@@ -89,14 +95,13 @@ module median_filter #(
         {v[3], v[6]} = (v[3] > v[6]) ? {v[6], v[3]} : {v[3], v[6]};
         {v[1], v[4]} = (v[1] > v[4]) ? {v[4], v[1]} : {v[1], v[4]};
         {v[2], v[5]} = (v[2] > v[5]) ? {v[5], v[2]} : {v[2], v[5]};
-        // 16..19 converge on the 5th order statistic
+        // 16..19: converge on the 5th order statistic
         {v[4], v[7]} = (v[4] > v[7]) ? {v[7], v[4]} : {v[4], v[7]};
         {v[4], v[2]} = (v[4] > v[2]) ? {v[2], v[4]} : {v[4], v[2]};
         {v[6], v[4]} = (v[6] > v[4]) ? {v[4], v[6]} : {v[6], v[4]};
         {v[4], v[2]} = (v[4] > v[2]) ? {v[2], v[4]} : {v[4], v[2]};
     end
 
-    // v[4] now holds the median of the nine input pixels.
     assign median_out = v[4];
 
 endmodule

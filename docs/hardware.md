@@ -133,7 +133,8 @@ nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 | + BRAM line buffer | 30.91 MHz | 869 | 2 | 17 |
 | + filter_controller pre-register | 29.87 MHz | 888 | 2 | 17 |
 | + filter_controller win-input register | 36.51 MHz | 963 | 2 | 17 |
-| + gaussian accumulator pipeline | **36.65 MHz** | **1,015** | **2** | 17 |
+| + gaussian accumulator pipeline | 36.65 MHz | 1,015 | 2 | 17 |
+| + median comparator pipeline | **49.15 MHz** | **1,079** | **2** | 17 |
 
 The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
 input path) and an output-accumulator register plus reciprocal multiply (breaks
@@ -161,10 +162,18 @@ clock port and a 1-cycle register splitting the 9-input adder tree into row sums
 (wiener_r2). Fmax: 36.51 → **36.65 MHz** (+0.4% — routing noise). The gaussian
 adder tree was not the critical path: nextpnr reports it as `win_r` Q →
 `median_px` CCU2C carry chain → `comb_r`. filter_controller total latency is now
-14 cycles (1 win-input + 1 gaussian-row + 1 comb-pre + 10 delay-chain stages + 1
-output register); PIPE_STAGES = 13 throughout the design. TRELLIS_FF: 963 → 1,015
-(+52 for r0_q/r1_q/r2_q + median_r/centre_r + sel_wr2/vld_wr2 + wiener_r2).
-LUT4: 1,853 → 1,816 (−37, minor reduction from improved synthesis of split tree).
+14 cycles; PIPE_STAGES = 13. TRELLIS_FF: 963 → 1,015 (+52); LUT4: 1,853 → 1,816.
+
+The eighth row pipelines the median comparator network: `median_filter` gains
+clock/rst_n/en ports and a 1-cycle pipeline register splitting the 19-comparator
+network at the column-sort boundary (steps 1-9 sort columns → register → steps
+10-19 find median). Stage 1 is 3 comparators deep; stage 2 is 5 deep. The
+external `median_r` register in filter_controller's Stage G is absorbed into the
+module — net pipeline depth is **unchanged** (PIPE_STAGES = 13, total latency =
+14). Fmax: 36.65 → **49.15 MHz** (+34%). The median CCU2C carry chain is gone
+from the critical path; nextpnr now reports `u_wiener.s_pre` Q → `den_v` →
+`MULT18X18D` (~20 ns) — the Wiener variance computation. TRELLIS_FF: 1,015 →
+1,079 (+64 = 9×8-bit median column-sort register − 8-bit median_r removed).
 
 **This is an ECP5 number** — it is a like-for-like comparison on one part, not a
 claim about any target hardware.
@@ -195,7 +204,7 @@ nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
 | LUT4 | 1,816 | 24,288 | 7% |
-| TRELLIS_FF | 1,015 | 24,288 | 4% |
+| TRELLIS_FF | 1,079 | 24,288 | 4% |
 | DP16KD (BRAM18) | 2 | 56 | 3% |
 | MULT18X18D (DSP) | 17 | 28 | 60% |
 
@@ -216,22 +225,22 @@ From nextpnr-ecp5 0.9-2, `--freq 100 --lpf-allow-unconstrained`, seed 1.
 | Item | Value |
 |---|---|
 | Clock target | 100 MHz |
-| Achieved Fmax | 36.65 MHz |
+| Achieved Fmax | 49.15 MHz |
 | Timing closure | FAIL |
-| Critical path | `win_r` Q → `median_px` CCU2C carry chain → `comb_r` setup (~27 ns) |
+| Critical path | `u_wiener.s_pre` Q → `den_v` → `MULT18X18D` input (~20 ns) |
 
 The design does not close timing at 100 MHz.  The `--lpf-allow-unconstrained`
 flag means the clock enters through a general I/O cell; a dedicated clock pin
 (LOCATE COMP "clk" SITE "...") would reduce I/O overhead.
 
-The critical path is inside filter_controller: `win_r` Q feeds into the
-`median_px` CCU2C carry chain (the comparator network), ending at `comb_r`.
-Pipelining the gaussian accumulator (+0.4%) confirmed this; gaussian was not
-the bottleneck.  To improve Fmax further, the median comparator chain must be
-broken.
+The critical path is now inside `wiener_filter`: `s_pre` Q (the Wiener
+pre-stage register) feeds into the variance computation `den_v` and then
+into a `MULT18X18D` input (~20 ns).  The filter_controller carry chains are
+no longer in the path.
 
 **Next steps to improve Fmax** (in order of likely impact):
-1. Pipeline the median comparator network — register between comparison stages.
+1. Pipeline the Wiener variance path — register between `s_pre` and the
+   multiplier inputs.
 2. Use a dedicated clock pin via a LOCATE constraint in `ecp5_25k.lpf`.
 3. Target a 45k or 85k ECP5 with a higher speed grade.
 
