@@ -195,15 +195,23 @@ but the critical path shifted to window_gen FF → gaussian accumulator → comb
 
 Second: a `win_r`/`sel_wr`/`vld_wr` input register in filter_controller,
 registering win_flat (and filter_sel/valid_in) before the filter cores. This
-cuts the ~3.5 ns window_gen counter propagation from the critical path. The new
-critical path starts from `win_r` Q: win_r → gaussian/median accumulator → comb_r.
-Fmax: 29.87 → **36.51 MHz** (+22%). TRELLIS_FF: 888 → 963 (+75 for win_r).
-filter_controller total latency = 13 cycles (1 win-input + 1 comb pre-reg + 10
-delay chain + 1 output). `PIPE_STAGES` = 12 throughout the design. All 5 unit
-benches and 6 slow RTL tests pass.
+cuts the ~3.5 ns window_gen counter propagation from the critical path.
+Fmax: 29.87 → **36.51 MHz** (+22%). `PIPE_STAGES` = 12.
 
-The current critical path (~27 ns) is win_r Q → gaussian/median accumulator →
-comb_r. To improve Fmax further, pipeline the gaussian_filter adder tree.
+Done: gaussian accumulator pipeline (2026-09-30). `gaussian_filter` gains
+`clk`/`rst_n`/`en` ports and a 1-cycle register splitting the 9-input adder
+tree into row sums (comb) → register → final sum (comb). Arithmetic is
+bit-identical (addition is associative within range); max_abs_error = 0
+unchanged. filter_controller adds Stage G registers (median_r, centre_r,
+sel_wr2, vld_wr2) and wiener_r2 to keep all paths aligned at 14 cycles.
+Fmax: 36.51 → **36.65 MHz** (+0.4% — routing noise). The gaussian adder tree
+was not the critical path; nextpnr reports win_r Q → median_px CCU2C carry chain
+→ comb_r (~27 ns). LUT4: 1,853 → 1,816; TRELLIS_FF: 963 → 1,015 (+52).
+`PIPE_STAGES` = 13 throughout the design. All 5 unit benches and 6 slow RTL
+tests pass.
+
+The current critical path (~27 ns) is win_r Q → median_px CCU2C carry chain →
+comb_r. To improve Fmax further, pipeline the median comparator network.
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results

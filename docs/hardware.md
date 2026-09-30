@@ -43,10 +43,10 @@ module never grew.
 in the generator that cycle, which trails the input pixel by IMG_WIDTH+1. Change
 them between frames.
 
-**Latency and flush.** The filter_controller pipeline is `PIPE_STAGES` = 11 deep
-(1 pre-register + 10 delay-chain/Wiener stages), so the first `m_valid` appears
-`LATENCY` = IMG_WIDTH+3+PIPE_STAGES advances after the first pixel, and the
-drain is `FLUSH_CYCLES` = IMG_WIDTH+2+PIPE_STAGES.
+**Latency and flush.** The filter_controller pipeline is `PIPE_STAGES` = 13 deep
+(1 win-input + 1 gaussian-row + 1 comb-pre + 10 delay-chain/Wiener stages), so
+the first `m_valid` appears `LATENCY` = IMG_WIDTH+3+PIPE_STAGES advances after
+the first pixel, and the drain is `FLUSH_CYCLES` = IMG_WIDTH+2+PIPE_STAGES.
 Both are localparams in `rtl/fpga_denoiser_top.sv`; read them rather than
 hardcoding, because a caller still flushing for IMG_WIDTH+2 comes up
 PIPE_STAGES pixels short. **Throughput is unchanged at one pixel per cycle** —
@@ -132,7 +132,8 @@ nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 | Pipelined + reciprocal multiply | 30.23 MHz | 4,445 | 0 | 17 |
 | + BRAM line buffer | 30.91 MHz | 869 | 2 | 17 |
 | + filter_controller pre-register | 29.87 MHz | 888 | 2 | 17 |
-| + filter_controller win-input register | **36.51 MHz** | **963** | **2** | 17 |
+| + filter_controller win-input register | 36.51 MHz | 963 | 2 | 17 |
+| + gaussian accumulator pipeline | **36.65 MHz** | **1,015** | **2** | 17 |
 
 The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
 input path) and an output-accumulator register plus reciprocal multiply (breaks
@@ -151,10 +152,19 @@ Registering `win_flat` (and `filter_sel`/`valid_in`) before the filter cores
 cuts the window_gen counter propagation (~3.5 ns of routing and LUT logic) from
 the critical path. The new critical path starts from `win_r` Q directly into the
 gaussian/median accumulator, without the window_gen overhead. Fmax: 29.87 →
-**36.51 MHz** (+22%). filter_controller total latency is now 13 cycles (1
-win-input + 1 comb pre-register + 10 delay-chain stages + 1 output register);
-PIPE_STAGES = 12 throughout the design. TRELLIS_FF: 888 → 963 (+75 for the 72-bit
-win_r + 2-bit sel_wr + 1-bit vld_wr).
+**36.51 MHz** (+22%). PIPE_STAGES = 12 throughout the design. TRELLIS_FF: 888 → 963 (+75).
+
+The seventh row pipelines the gaussian accumulator: `gaussian_filter` gains a
+clock port and a 1-cycle register splitting the 9-input adder tree into row sums
+(comb) → register → final sum (comb). filter_controller adds Stage G registers
+(median_r, centre_r, sel_wr2, vld_wr2) and a second wiener output register
+(wiener_r2). Fmax: 36.51 → **36.65 MHz** (+0.4% — routing noise). The gaussian
+adder tree was not the critical path: nextpnr reports it as `win_r` Q →
+`median_px` CCU2C carry chain → `comb_r`. filter_controller total latency is now
+14 cycles (1 win-input + 1 gaussian-row + 1 comb-pre + 10 delay-chain stages + 1
+output register); PIPE_STAGES = 13 throughout the design. TRELLIS_FF: 963 → 1,015
+(+52 for r0_q/r1_q/r2_q + median_r/centre_r + sel_wr2/vld_wr2 + wiener_r2).
+LUT4: 1,853 → 1,816 (−37, minor reduction from improved synthesis of split tree).
 
 **This is an ECP5 number** — it is a like-for-like comparison on one part, not a
 claim about any target hardware.
@@ -184,8 +194,8 @@ nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
-| LUT4 | 1,853 | 24,288 | 7% |
-| TRELLIS_FF | 963 | 24,288 | 3% |
+| LUT4 | 1,816 | 24,288 | 7% |
+| TRELLIS_FF | 1,015 | 24,288 | 4% |
 | DP16KD (BRAM18) | 2 | 56 | 3% |
 | MULT18X18D (DSP) | 17 | 28 | 60% |
 
@@ -206,21 +216,22 @@ From nextpnr-ecp5 0.9-2, `--freq 100 --lpf-allow-unconstrained`, seed 1.
 | Item | Value |
 |---|---|
 | Clock target | 100 MHz |
-| Achieved Fmax | 36.51 MHz |
+| Achieved Fmax | 36.65 MHz |
 | Timing closure | FAIL |
-| Critical path | `win_r` Q → gaussian/median accumulator carry chain → `comb_r` setup (~27 ns) |
+| Critical path | `win_r` Q → `median_px` CCU2C carry chain → `comb_r` setup (~27 ns) |
 
 The design does not close timing at 100 MHz.  The `--lpf-allow-unconstrained`
 flag means the clock enters through a general I/O cell; a dedicated clock pin
 (LOCATE COMP "clk" SITE "...") would reduce I/O overhead.
 
-The critical path is now inside filter_controller: `win_r` Q feeds directly into
-the gaussian/median accumulator carry chain, ending at `comb_r`.  To improve
-Fmax further, the arithmetic from `win_r` to `comb_r` must be broken.
+The critical path is inside filter_controller: `win_r` Q feeds into the
+`median_px` CCU2C carry chain (the comparator network), ending at `comb_r`.
+Pipelining the gaussian accumulator (+0.4%) confirmed this; gaussian was not
+the bottleneck.  To improve Fmax further, the median comparator chain must be
+broken.
 
 **Next steps to improve Fmax** (in order of likely impact):
-1. Pipeline the Gaussian accumulator — break the 9-input adder tree into two
-   stages (e.g. partial sums → register → final accumulate).
+1. Pipeline the median comparator network — register between comparison stages.
 2. Use a dedicated clock pin via a LOCATE constraint in `ecp5_25k.lpf`.
 3. Target a 45k or 85k ECP5 with a higher speed grade.
 
