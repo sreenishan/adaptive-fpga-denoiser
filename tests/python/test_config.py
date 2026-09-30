@@ -71,13 +71,13 @@ def test_software_and_rtl_boundary_policies_agree() -> None:
 # Honesty: nothing unmeasured is reported as a number.
 
 
-def test_unconfigured_synthesis_is_none_not_zero() -> None:
+def test_synthesis_is_configured_with_ecp5_target() -> None:
     synthesis = cfg.load_hardware_config().synthesis
-    assert synthesis.vendor is None
-    assert synthesis.device is None
-    assert synthesis.clock_mhz is None
-    assert synthesis.tool_version is None
-    assert synthesis.configured is False
+    assert synthesis.vendor == "lattice"
+    assert synthesis.device is not None
+    assert synthesis.clock_mhz == 100.0
+    assert synthesis.tool_version is not None
+    assert synthesis.configured is True
 
 
 def test_wiener_noise_variance_may_be_unspecified() -> None:

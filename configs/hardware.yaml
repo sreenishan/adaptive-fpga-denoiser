@@ -22,7 +22,7 @@ simulation:
     wiener: 1
 
 synthesis:
-  vendor: null            # xilinx | intel
-  device: null
-  clock_mhz: null
-  tool_version: null
+  vendor: lattice         # lattice | xilinx | intel
+  device: LFE5U-25F-6BG381C   # ECP5-25k, speed grade 6, CABGA381
+  clock_mhz: 100          # target; achieved Fmax comes from nextpnr --report
+  tool_version: "yosys-0.57 nextpnr-ecp5-0.9-2"

@@ -1,0 +1,10 @@
+# Lattice ECP5-25k constraints for the adaptive FPGA denoiser.
+# Package: CABGA381
+#
+# This is a minimal timing-closure constraint file.  No I/O pin assignments
+# are made here because the top-level module exposes the denoiser's streaming
+# interface and not the physical pins of any specific development board.
+# Add board-specific pin assignments (LOCATE COMP ... SITE "...", IO_TYPE ...)
+# for the ULX3S or other ECP5 boards here when wiring to real peripherals.
+
+FREQUENCY NET "clk" 100.0 MHz;

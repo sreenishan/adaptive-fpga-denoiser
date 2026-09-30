@@ -20,8 +20,8 @@ def test_cli_reports_success_on_the_shipped_configs(
     out = capsys.readouterr().out
     assert "dataset.yaml" in out
     assert "hardware.yaml" in out
-    # An unconfigured board is shown as TBD, never as a plausible-looking number.
-    assert "no board configured (TBD)" in out
+    # Board is now configured (ECP5-25k); the vendor appears in the summary.
+    assert "lattice" in out
 
 
 def test_cli_exits_non_zero_on_a_bad_config(tmp_path: Path) -> None:

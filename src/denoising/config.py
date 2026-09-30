@@ -79,7 +79,7 @@ _OPTIMIZERS: Final[tuple[str, ...]] = ("adam", "adamw", "sgd")
 _SCHEDULERS: Final[tuple[Any, ...]] = (None, "cosine", "step", "plateau")
 _DEVICES: Final[tuple[str, ...]] = ("auto", "cpu", "cuda")
 _SIMULATORS: Final[tuple[str, ...]] = ("verilator", "iverilog")
-_VENDORS: Final[tuple[Any, ...]] = (None, "xilinx", "intel")
+_VENDORS: Final[tuple[Any, ...]] = (None, "xilinx", "intel", "lattice")
 
 #: Repository root: ``<root>/src/denoising/config.py`` -> ``<root>``.
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[2]

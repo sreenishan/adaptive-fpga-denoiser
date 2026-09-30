@@ -8,13 +8,15 @@ until a tool report or a measurement exists.
 
 | Item | Value |
 |---|---|
-| Vendor | not selected |
-| Device | not selected |
-| Toolchain | not selected |
-| Tool version | TBD |
+| Vendor | Lattice |
+| Device | LFE5U-25F-6BG381C (ECP5-25k, speed grade 6, CABGA381) |
+| Toolchain | yosys 0.57 + nextpnr-ecp5 0.9-2 (oss-cad-suite) |
+| Constraint file | `fpga/constraints/ecp5_25k.lpf` |
 
-`configs/hardware.yaml` holds `null` for all four. The core RTL is written to be
-board-independent; anything board-specific belongs under `fpga/`.
+`configs/hardware.yaml` records the vendor and device. The core RTL is written to
+be board-independent; anything board-specific belongs under `fpga/`. No board
+has been programmed — these are place-and-route results from
+`scripts/place_and_route.py`, not measurements on silicon.
 
 ## Pixel stream interface
 
@@ -150,31 +152,59 @@ the median network 415.
 
 ## Resource utilisation
 
-Board-specific, from a vendor fitter. Nothing has been fitted.
+From `scripts/place_and_route.py` on ECP5-25k (LFE5U-25F-6BG381C), yosys 0.57 +
+nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
-| LUT | TBD | TBD | TBD |
-| FF | TBD | TBD | TBD |
-| BRAM | TBD | TBD | TBD |
-| DSP | TBD | TBD | TBD |
-| I/O | TBD | TBD | TBD |
+| LUT4 | 2,052 | 24,288 | 8% |
+| TRELLIS_FF | 4,343 | 24,288 | 17% |
+| BRAM18 | 0 | 56 | 0% |
+| MULT18X18D (DSP) | 15 | 28 | 53% |
+
+**The line buffer is still discrete flip-flops (3,584 of the 4,343 FFs).**
+It is written as two 224-deep shift registers; nextpnr did not infer block RAM
+for them, exactly as the generic-synthesis note warned.  Replacing the
+shift registers with an explicit BRAM instantiation would free ~3,500 FFs and
+move the line buffer to BRAM (2 × 18 kb blocks) — a straightforward
+improvement for a future commit.
+
+**The 15 MULT18X18D blocks are 53% of the available DSPs.**  They come from
+the Wiener filter's mean and variance arithmetic.  That is acceptable on a
+25k part but would be the first thing to check on a smaller device.
 
 ## Timing
 
+From nextpnr-ecp5 0.9-2, `--freq 100 --lpf-allow-unconstrained`, seed 1.
+
 | Item | Value |
 |---|---|
-| Clock constraint | TBD |
-| Achieved clock | TBD |
-| WNS | TBD |
-| TNS | TBD |
+| Clock target | 100 MHz |
+| Achieved Fmax | 20.42 MHz |
+| Timing closure | FAIL |
+| Critical path | Wiener filter: carry-chain through `rem_r` registers (~49 ns) |
+
+The design does not close timing at 100 MHz.  The critical path is the
+multi-cycle carry chain in the Wiener restoring divider.  The `--lpf-allow-unconstrained`
+flag means the clock enters through a general I/O cell; a dedicated clock pin
+(LOCATE COMP "clk" SITE "...") would reduce I/O overhead but would not fix the
+combinational depth.
+
+**Next steps to improve Fmax** (in order of likely impact):
+1. Register the carry chain across the eight restoring steps rather than computing
+   all steps in one cycle — the `PIPE_STAGES` mechanism already exists for this.
+2. Use a dedicated clock pin via a LOCATE constraint.
+3. Target a 45k or 85k ECP5 with a higher speed grade.
 
 ## Power
 
+No power measurement is available without a programmed board.  nextpnr-ecp5
+does not produce a power report; ecppack produces a bitstream only.
+
 | Item | Value | Source |
 |---|---|---|
-| Static | TBD | - |
-| Dynamic | TBD | - |
-| Total | TBD | - |
+| Static | TBD | — |
+| Dynamic | TBD | — |
+| Total | TBD | — |
 
 Estimated and measured power are labelled separately and never mixed.
