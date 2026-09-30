@@ -43,8 +43,8 @@ module never grew.
 in the generator that cycle, which trails the input pixel by IMG_WIDTH+1. Change
 them between frames.
 
-**Latency and flush.** The filter_controller pipeline is `PIPE_STAGES` = 14 deep
-(1 win-input + 1 gaussian-row + 1 comb-pre + 11 delay-chain/Wiener stages), so
+**Latency and flush.** The filter_controller pipeline is `PIPE_STAGES` = 15 deep
+(1 win-input + 1 gaussian-row/G1 + 1 median-align/G2 + 1 comb-pre + 11 delay-chain/Wiener stages), so
 the first `m_valid` appears `LATENCY` = IMG_WIDTH+3+PIPE_STAGES advances after
 the first pixel, and the drain is `FLUSH_CYCLES` = IMG_WIDTH+2+PIPE_STAGES.
 Both are localparams in `rtl/fpga_denoiser_top.sv`; read them rather than
@@ -135,7 +135,8 @@ nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 | + filter_controller win-input register | 36.51 MHz | 963 | 2 | 17 |
 | + gaussian accumulator pipeline | 36.65 MHz | 1,015 | 2 | 17 |
 | + median comparator pipeline | 49.15 MHz | 1,079 | 2 | 17 |
-| + Wiener variance stage pipeline | **49.36 MHz** | **1,181** | **2** | 17 |
+| + Wiener variance stage pipeline | 49.36 MHz | 1,181 | 2 | 17 |
+| + median stage-2 pipeline | **56.82 MHz** | **1,224** | **2** | 17 |
 
 The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
 input path) and an output-accumulator register plus reciprocal multiply (breaks
@@ -183,11 +184,27 @@ chain, ~6 ns from `s2_pre` Q) and `p2_r = s_pre*s_pre` (MULT18X18D, ~4 ns from
 a fast 24-bit subtraction (~5 ns) and the remaining path to `rem_r[1]` is
 short.  Wiener total latency: 10 → 11 cycles (STAGES+3); filter_controller
 `DIV_STAGES` 10 → 11; `PIPE_STAGES` 13 → 14; total pipeline latency 14 → 15
-cycles.  Fmax: 49.15 → **49.36 MHz** (+0.4% — routing noise; two paths are now
+cycles.  Fmax: 49.15 → 49.36 MHz (+0.4% — routing noise; two paths are now
 neck-and-neck at ~20 ns).  The Wiener variance path is no longer critical;
 nextpnr now reports `u_median.q[4]` Q → median stage-2 carry chain → `comb_r`
 (~20 ns).  TRELLIS_FF: 1,079 → 1,181 (+102 for p1_r + p2_r + nv81_r + s_r0 +
 c_r0 registers and one extra delay-chain stage); TRELLIS_COMB: 1,816 → 1,963.
+
+The tenth row pipelines the median stage-2 network: `median_filter`'s five-
+comparator stage 2 (steps 10-19) is split at step 16 into two three-comparator
+halves — stage 2a (steps 10-16, 3 deep) → register r[0..8] → stage 2b
+(steps 17-19, 3 deep).  Arithmetic is unchanged; the split is verified
+exact over all pseudorandom and corner-case windows in the unit bench.
+`median_filter` latency: 1 → 2 cycles.  `filter_controller` adds Stage G2 —
+a one-cycle register delaying `gaussian_px` and `centre_r` so all three comb
+paths (median, gaussian, bypass) align at cycle 3 from `win_flat`.
+`PIPE_STAGES`: 14 → 15; total latency: 15 → 16 cycles; `wiener_r3` added to
+keep the Wiener path aligned.  Fmax: 49.36 → **56.82 MHz** (+15%).  The median
+stage-2 carry chain is gone from the critical path; nextpnr now reports
+`u_ctrl.u_wiener.c_r[8]` Q → MULT18X18D (gain multiply) → second MULT →
+carry chain (~17.6 ns).  TRELLIS_FF: 1,181 → 1,224 (+43 = 9×8-bit stage-2a
+register + Stage G2 signals); TRELLIS_COMB: 1,963 → 1,943 (−20, simpler
+stage-2b).
 
 **This is an ECP5 number** — it is a like-for-like comparison on one part, not a
 claim about any target hardware.
@@ -217,8 +234,8 @@ nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
-| TRELLIS_COMB (LUT4) | 1,963 | 24,288 | 8% |
-| TRELLIS_FF | 1,181 | 24,288 | 4% |
+| TRELLIS_COMB (LUT4) | 1,943 | 24,288 | 8% |
+| TRELLIS_FF | 1,224 | 24,288 | 5% |
 | DP16KD (BRAM18) | 2 | 56 | 3% |
 | MULT18X18D (DSP) | 17 | 28 | 60% |
 
@@ -239,24 +256,22 @@ From nextpnr-ecp5 0.9-2, `--freq 100 --lpf-allow-unconstrained`, seed 1.
 | Item | Value |
 |---|---|
 | Clock target | 100 MHz |
-| Achieved Fmax | 49.36 MHz |
+| Achieved Fmax | 56.82 MHz |
 | Timing closure | FAIL |
-| Critical path | `u_median.q[4]` Q → median stage-2 carry chain → `comb_r` setup (~20 ns) |
+| Critical path | `u_ctrl.u_wiener.c_r[8]` Q → MULT18X18D (gain multiply) → carry chain (~17.6 ns) |
 
 The design does not close timing at 100 MHz.  The `--lpf-allow-unconstrained`
 flag means the clock enters through a general I/O cell; a dedicated clock pin
 (LOCATE COMP "clk" SITE "...") would reduce I/O overhead.
 
-The critical path is now inside `median_filter` stage 2: `q[4]` Q (the
-column-sort pipeline register) feeds through the 5-comparator median-selection
-network (steps 10-19) into the `comb_r` pre-register in filter_controller
-(~20 ns).  Both the Wiener variance path and this median path are ~20 ns;
-pipelining the Wiener variance stage shifted the bottleneck here.
+The critical path is now in the Wiener gain computation: `c_r[8]` Q drives
+the first MULT18X18D, whose output feeds a second MULT18X18D (the gain×(9·c−s)
+product), whose partial product enters a carry chain (~17.6 ns total).  The
+median stage-2 path is no longer the bottleneck.
 
 **Next steps to improve Fmax** (in order of likely impact):
-1. Pipeline the median stage-2 network — add a register after step 15 (the
-   "discard extremes" phase), splitting the 5-comparator stage 2 into two
-   shorter sub-stages.
+1. Pipeline the Wiener gain-multiply path — add a register between the two
+   MULT18X18D stages (`c_r` → first multiply → register → second multiply).
 2. Use a dedicated clock pin via a LOCATE constraint in `ecp5_25k.lpf`.
 3. Target a 45k or 85k ECP5 with a higher speed grade.
 

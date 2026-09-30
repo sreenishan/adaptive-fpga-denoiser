@@ -3,8 +3,8 @@
 // Self-checking testbench for median_filter. No simulator golden file required.
 // Reference: bubble-sort of the nine input pixels; result must match v[4].
 //
-// median_filter is pipelined (1-cycle latency): stimulus is driven at negedge,
-// the result is sampled at posedge + #1.
+// median_filter is pipelined (2-cycle latency): stimulus is driven at negedge,
+// the result is sampled two posedges later + #1.
 //
 // Tests:
 //   1. Corner cases (uniform windows, extremes)
@@ -67,7 +67,7 @@ module tb_median_filter;
     int errors;
     logic [DEPTH-1:0] exp;
 
-    // Present stimulus at negedge; sample median_out one cycle later.
+    // Present stimulus at negedge; sample median_out two cycles later.
     task automatic check9(
         input [DEPTH-1:0] p0,p1,p2,p3,p4,p5,p6,p7,p8
     );
@@ -75,7 +75,7 @@ module tb_median_filter;
         win[0][0]=p0; win[0][1]=p1; win[0][2]=p2;
         win[1][0]=p3; win[1][1]=p4; win[1][2]=p5;
         win[2][0]=p6; win[2][1]=p7; win[2][2]=p8;
-        @(posedge clk); #1;
+        @(posedge clk); @(posedge clk); #1;
         exp = ref_median(p0,p1,p2,p3,p4,p5,p6,p7,p8);
         if (median_out !== exp) begin
             $display("FAIL: median(%0d,%0d,%0d, %0d,%0d,%0d, %0d,%0d,%0d) = %0d, want %0d",

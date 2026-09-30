@@ -235,14 +235,27 @@ subtraction. `nv81_r = 81*nv_pre` and the s/centre pixel are also latched here.
 After the register, `v81` is a fast subtraction and the path to `rem_r[1]` is
 short. Wiener latency: 10 → 11 cycles (STAGES+3); DIV_STAGES: 10 → 11;
 PIPE_STAGES: 13 → 14; total latency: 14 → 15 cycles.
-Fmax: 49.15 → **49.36 MHz** (+0.4% — both Wiener variance and median stage-2
+Fmax: 49.15 → 49.36 MHz (+0.4% — both Wiener variance and median stage-2
 paths were ~20 ns; pipelining the Wiener path transferred the critical path to
 median stage-2). TRELLIS_FF: 1,079 → 1,181 (+102); TRELLIS_COMB: 1,816 → 1,963.
 All 5 unit benches pass.
 
-The current critical path (~20 ns) is `u_median.q[4]` Q → median stage-2
-carry chain (5 comparators) → `comb_r`. To improve Fmax further, pipeline the
-median stage-2 network.
+Done: median stage-2 pipeline (2026-09-30). `median_filter`'s five-comparator
+stage 2 (steps 10-19) split at step 16 into two three-comparator sub-stages:
+stage 2a (steps 10-16, 3 deep) → register r[0..8] → stage 2b (steps 17-19,
+3 deep). Split verified exact over all unit-bench cases. `median_filter` latency:
+1 → 2 cycles. `filter_controller` adds Stage G2 (new `gaussian_r2`, `centre_r2`,
+`sel_wr3`, `vld_wr3`) to delay gaussian/bypass by one cycle so all comb paths
+align at cycle 3 from `win_flat`. `PIPE_STAGES`: 14 → 15; total latency: 15 → 16
+cycles; `wiener_r3` added. Fmax: 49.36 → **56.82 MHz** (+15%). The median
+carry chain is gone from the critical path; nextpnr now reports
+`u_ctrl.u_wiener.c_r[8]` Q → MULT18X18D → second MULT → carry chain (~17.6 ns).
+TRELLIS_FF: 1,181 → 1,224 (+43); TRELLIS_COMB: 1,963 → 1,943 (−20).
+All 5 unit benches pass.
+
+The current critical path (~17.6 ns) is `u_ctrl.u_wiener.c_r[8]` Q → Wiener
+gain-multiply chain (two MULT18X18D stages → carry chain). To improve Fmax
+further, pipeline between the two MULT18X18D stages in the Wiener gain path.
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results
