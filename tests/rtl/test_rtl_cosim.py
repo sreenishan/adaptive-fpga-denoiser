@@ -31,11 +31,14 @@ def _icarus_available() -> bool:
     return True
 
 
-pytestmark = pytest.mark.skipif(
-    not _icarus_available(),
-    reason="Icarus Verilog not found (set $IVERILOG/$VVP, add to PATH, or install to "
-           "C:/iverilog) — the RTL was NOT simulated in this run",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        not _icarus_available(),
+        reason="Icarus Verilog not found (set $IVERILOG/$VVP, add to PATH, or install to "
+               "C:/iverilog) — the RTL was NOT simulated in this run",
+    ),
+    pytest.mark.slow,
+]
 
 
 def _cosim_module():

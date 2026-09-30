@@ -34,11 +34,14 @@ def _yosys_available() -> bool:
     return bool(os.environ.get("YOSYS") or shutil.which("yosys") or suite.exists())
 
 
-pytestmark = pytest.mark.skipif(
-    not _yosys_available(),
-    reason="yosys not found (set $YOSYS, add to PATH, or install oss-cad-suite) — "
-           "the RTL was NOT synthesised in this run",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        not _yosys_available(),
+        reason="yosys not found (set $YOSYS, add to PATH, or install oss-cad-suite) — "
+               "the RTL was NOT synthesised in this run",
+    ),
+    pytest.mark.slow,
+]
 
 
 @pytest.fixture(scope="module")

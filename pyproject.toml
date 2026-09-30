@@ -52,4 +52,7 @@ minversion = "7.0"
 testpaths = ["tests/python", "tests/rtl"]
 # Lets `pytest` run in a fresh checkout without `pip install -e .` first.
 pythonpath = ["src"]
-addopts = "-ra"
+addopts = "-ra -m 'not slow'"
+markers = [
+    "slow: marks tests as slow to run (deselect with '-m not slow', run with '-m slow')",
+]
