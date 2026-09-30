@@ -1,5 +1,9 @@
 {
   "version": 2,
-  "buildCommand": "echo 'static redirect only'",
-  "outputDirectory": "public"
+  "builds": [
+    { "src": "public/index.html", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "/public/index.html" }
+  ]
 }
