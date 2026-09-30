@@ -86,14 +86,18 @@ all, and where does the logic go.
 
 | Module | LUTs | FFs |
 |---|---:|---:|
-| `wiener_filter` | 3,287 | 636 |
-| `line_buffer` | 0 | 3,584 |
+| `wiener_filter` | 2,932 | 636 |
+| `line_buffer` | 1,447 | 3,608 |
 | `median_filter` | 408 | 0 |
 | `window_gen` | 112 | 97 |
 | `gaussian_filter` | 112 | 0 |
 | `filter_controller` | 17 | 119 |
 | `fpga_denoiser_top` | 15 | 9 |
-| **Total** | **3,951** | **4,445** |
+| **Total** | **5,043** | **4,469** |
+
+Note: `line_buffer` maps to LUT RAM in generic synthesis (no DP16KD available).
+On ECP5 (`synth_ecp5`) yosys infers two DP16KD blocks and the line buffer
+contributes negligible LUTs and FFs — see the Resource utilisation table.
 
 Two things to know before choosing a part:
 
@@ -121,11 +125,12 @@ that reports timing:
 nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 ```
 
-| | Fmax | TRELLIS_FF | MULT18X18D |
-|---|---:|---:|---:|
-| Combinational divider | 7.97 MHz | 3,691 | 15 |
-| Pipelined, 8 stages | 18.15 MHz | 4,343 | 15 |
-| Pipelined + reciprocal multiply | **30.23 MHz** | 4,445 | 17 |
+| | Fmax | TRELLIS_FF | DP16KD | MULT18X18D |
+|---|---:|---:|---:|---:|
+| Combinational divider | 7.97 MHz | 3,691 | 0 | 15 |
+| Pipelined, 8 stages | 18.15 MHz | 4,343 | 0 | 15 |
+| Pipelined + reciprocal multiply | 30.23 MHz | 4,445 | 0 | 17 |
+| + BRAM line buffer | **30.91 MHz** | **869** | **2** | 17 |
 
 The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
 input path) and an output-accumulator register plus reciprocal multiply (breaks
@@ -162,17 +167,15 @@ nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
-| LUT4 | 1,835 | 24,288 | 7% |
-| TRELLIS_FF | 4,445 | 24,288 | 18% |
-| DP16KD (BRAM18) | 0 | 56 | 0% |
+| LUT4 | 1,847 | 24,288 | 7% |
+| TRELLIS_FF | 869 | 24,288 | **3%** |
+| DP16KD (BRAM18) | 2 | 56 | 3% |
 | MULT18X18D (DSP) | 17 | 28 | 60% |
 
-**The line buffer is still discrete flip-flops (3,584 of the 4,445 FFs).**
-It is written as two 224-deep shift registers; nextpnr did not infer block RAM
-for them, exactly as the generic-synthesis note warned.  Replacing the
-shift registers with an explicit BRAM instantiation would free ~3,500 FFs and
-move the line buffer to BRAM (2 × 18 kb blocks) — a straightforward
-improvement for a future commit.
+**The line buffer is now in block RAM.**  The two 224-deep shift registers are
+rewritten as circular buffers (synchronous dual-port memory); yosys `synth_ecp5`
+infers two DP16KD blocks.  TRELLIS_FF dropped from 4,445 to 869 (−3,576 FFs,
+−80%).  Only 3 of the 56 BRAM18 blocks are used.
 
 **The 17 MULT18X18D blocks are 60% of the available DSPs.**  15 come from the
 Wiener filter's mean and variance arithmetic; 2 are the reciprocal-multiply
@@ -186,7 +189,7 @@ From nextpnr-ecp5 0.9-2, `--freq 100 --lpf-allow-unconstrained`, seed 1.
 | Item | Value |
 |---|---|
 | Clock target | 100 MHz |
-| Achieved Fmax | 30.23 MHz |
+| Achieved Fmax | 30.91 MHz |
 | Timing closure | FAIL |
 | Critical path | filter_controller mux → CCU2C carry cell → `comb_d[1]` (~33 ns) |
 

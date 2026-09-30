@@ -173,6 +173,20 @@ faster. The constant `RECIP = 233017 = floor(2^29 / 2304)` and shift `RECIP_SHR
 = 29` are in the module comment. Do not revert to integer division — it would
 reopen the 49 ns critical path.
 
+Done: BRAM line buffer (2026-09-30). `line_buffer.sv` rewrote the two 224-deep
+shift registers as circular buffers (synchronous dual-port memory pattern).
+yosys `synth_ecp5` now infers two DP16KD blocks. TRELLIS_FF: 4,445 → **869**
+(−3,576 = −80%); DP16KD: 0 → 2; Fmax: 30.23 → 30.91 MHz (routing noise, same
+critical path). The previous `initial` block that zeroed the shift-register
+cells is gone — it was the main blocker for BRAM inference. On ECP5, BRAMs
+power on to zero; in simulation, X reads during the priming period are masked
+by window_gen's valid_out being low.
+
+The timing contract with window_gen is unchanged: the registered BRAM output
+at cycle N holds the pixel from WIDTH cycles ago, which is what window_gen's
+`always_ff` reads at the same posedge — same as the old shift-register tap.
+Do not add back an `initial` block; it will re-break BRAM inference.
+
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results
 from `scripts/place_and_route.py`, not measurements on silicon. Power is TBD.

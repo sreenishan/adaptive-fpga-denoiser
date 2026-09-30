@@ -5,15 +5,34 @@
 //
 // Interface
 //   clk        — rising-edge clock
-//   rst_n      — active-low synchronous reset
+//   rst_n      — active-low synchronous reset (resets write pointer only)
 //   pixel_in   — 8-bit greyscale pixel, valid when we=1
 //   we         — write enable (one pulse per input pixel)
-//   row_out[k] — current row k delayed pixel (k=0 is the newest)
+//   row_out[k] — row k delayed by k*WIDTH write pulses; k=0 is the live input
 //
-// The module instantiates (ROWS-1) shift-register stages, each WIDTH
-// pixels long.  On every clock where we=1 a pixel advances through
-// all stages.  After WIDTH×(ROWS-1) write pulses the last stage
-// holds the pixel that arrived (ROWS-1) rows ago.
+// Implementation: each delay stage is a WIDTH-deep circular buffer backed by a
+// synchronous dual-port memory so yosys synth_ecp5 can infer DP16KD BRAM.
+// (The earlier shift-register version had an `initial` block that zeroed all
+// cells — that is the main obstacle to BRAM inference in yosys, hence the
+// rewrite.)
+//
+// Timing: the read address presented at cycle N is wp_next = (wp+1)%WIDTH,
+// i.e. the address we will overwrite NEXT cycle.  That slot was last written
+// WIDTH cycles ago, so the registered BRAM output at cycle N+1 holds the value
+// from WIDTH advances back — identical to the former sr[s][WIDTH-1] tap.
+// When window_gen's always_ff fires at posedge N it reads s_out (which is still
+// the value registered at posedge N-1, before this cycle's update), giving the
+// same pixel as the shift register would have.
+//
+// Cascade: stage s (s≥2) takes row_out[(s-1)*DEPTH +: DEPTH] as its write
+// data.  That is s_out of stage s-1, read at posedge N before the current
+// non-blocking update — exactly the datum that was WIDTH cycles old for that
+// stage, so the total delay is correct.
+//
+// Initialization: no `initial` block.  ECP5 BRAMs power on to zero.
+// In simulation, reads during the priming period (first WIDTH*(ROWS-1) we
+// pulses) return X, but window_gen's valid_out is low then so they never
+// reach the output.
 
 `default_nettype none
 
@@ -23,52 +42,47 @@ module line_buffer #(
     parameter int DEPTH  = 8      // pixel bit-width
 ) (
     input  logic               clk,
-    input  logic               rst_n,   // unused: see the note on the always_ff
+    input  logic               rst_n,
     input  logic [DEPTH-1:0]   pixel_in,
     input  logic               we,
     output logic [ROWS*DEPTH-1:0] row_out   // flat; row_out[k*DEPTH +: DEPTH] = row k
 );
-    // row_out[0*DEPTH +: DEPTH] is the live input; row_out[k*DEPTH +: DEPTH] is k rows delayed.
-    // We implement ROWS-1 independent shift registers of depth WIDTH.
+    localparam int AW = $clog2(WIDTH);
 
-    logic [DEPTH-1:0] sr [0:ROWS-2][0:WIDTH-1];
+    // Row 0 is always the live input (combinatorial, zero latency).
+    assign row_out[0*DEPTH +: DEPTH] = pixel_in;
 
-    // Initialise all delay cells to zero. On a real FPGA, register and SRL
-    // primitives power on to zero (guaranteed by Xilinx and Intel), so this
-    // `initial` block matches hardware behaviour exactly. In simulation,
-    // leaving the cells uninitialised produces x values that propagate through
-    // window_gen's column registers and corrupt the first frame: the priming
-    // period guarantees col[r][2] is written before it is read, but the older
-    // stages (col[r][1], col[r][0]) still reflect the stale delay-line state
-    // if it starts as x. The previous comment that no un-written cell is ever
-    // read was wrong.
-    initial begin
-        for (int s = 0; s < ROWS-1; s++)
-            for (int i = 0; i < WIDTH; i++)
-                sr[s][i] = '0;
-    end
+    // Write pointer shared by all stages — they all advance on every we pulse.
+    logic [AW-1:0] wp;
+    logic [AW-1:0] wp_next;
+
+    always_comb wp_next = (wp == AW'(WIDTH-1)) ? '0 : AW'(wp + 1);
 
     always_ff @(posedge clk) begin
-        if (we) begin
-            // Stage 0: shift pixel_in into the first delay line.
-            sr[0][0] <= pixel_in;
-            for (int i = 1; i < WIDTH; i++)
-                sr[0][i] <= sr[0][i-1];
-
-            // Stages 1..ROWS-2: cascade.
-            for (int s = 1; s < ROWS-1; s++) begin
-                sr[s][0] <= sr[s-1][WIDTH-1];
-                for (int i = 1; i < WIDTH; i++)
-                    sr[s][i] <= sr[s][i-1];
-            end
-        end
+        if (!rst_n) wp <= '0;
+        else if (we) wp <= wp_next;
     end
 
-    // Newest row is always the raw input (row 0).
-    // Older rows tap the end of each delay stage.
-    assign row_out[0*DEPTH +: DEPTH] = pixel_in;
-    for (genvar k = 1; k < ROWS; k++) begin : gen_row_out
-        assign row_out[k*DEPTH +: DEPTH] = sr[k-1][WIDTH-1];
+    // One BRAM stage per delayed row.
+    //
+    //   Write port: address wp, data = row_out from the previous row
+    //               (row_out[0] = pixel_in for s=1; row_out[s-1] for s>1).
+    //   Read port:  address wp_next — the slot about to be overwritten, which
+    //               holds the value stored WIDTH advances ago.
+    //
+    // Both ports are gated by we (maps to clock-enable pins CEA/CEB on DP16KD).
+    // Separate always_ff blocks are required for yosys memory_bram inference.
+    for (genvar s = 1; s < ROWS; s++) begin : g_stage
+        logic [DEPTH-1:0] mem   [0:WIDTH-1];
+        logic [DEPTH-1:0] s_out;
+
+        always_ff @(posedge clk)
+            if (we) mem[wp] <= row_out[(s-1)*DEPTH +: DEPTH];
+
+        always_ff @(posedge clk)
+            if (we) s_out <= mem[wp_next];
+
+        assign row_out[s*DEPTH +: DEPTH] = s_out;
     end
 
 endmodule
