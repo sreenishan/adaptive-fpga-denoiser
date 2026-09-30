@@ -71,10 +71,11 @@ module fpga_denoiser_top #(
     output logic              m_overflow // sticky: a pixel was produced while
                                          // m_ready was low and has been lost
 );
-    // Pipeline depth of the Wiener divider in filter_controller. These two must
-    // agree with DIV_STAGES there; the flush contract in the header is written
-    // in terms of them, and the testbenches read them rather than hardcoding.
-    localparam int PIPE_STAGES   = 8;
+    // Total wiener pipeline latency (DIV_STAGES in filter_controller).
+    // wiener_filter has STAGES=8 restoring steps plus a pre-stage register and
+    // an output-accumulator register, so the total is 8+2=10. Must stay in
+    // sync with DIV_STAGES in filter_controller.sv.
+    localparam int PIPE_STAGES   = 10;
     localparam int LATENCY       = IMG_WIDTH + 3 + PIPE_STAGES;
     localparam int FLUSH_CYCLES  = IMG_WIDTH + 2 + PIPE_STAGES;
 

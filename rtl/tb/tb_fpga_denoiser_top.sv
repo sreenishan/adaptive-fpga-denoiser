@@ -24,8 +24,8 @@ module tb_fpga_denoiser_top;
     parameter int W          = 4;
     parameter int H          = 4;
     parameter int NOISE_VAR  = 100;
-    // Must match fpga_denoiser_top's PIPE_STAGES.
-    localparam int PIPE_STAGES = 8;
+    // Must match fpga_denoiser_top's PIPE_STAGES (wiener total latency = 8+2=10).
+    localparam int PIPE_STAGES = 10;
     parameter int DEPTH      = 8;
 
     // ── DUT ────────────────────────────────────────────────────────────────

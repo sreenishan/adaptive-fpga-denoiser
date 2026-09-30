@@ -141,11 +141,12 @@ combinational control: change them between frames, not mid-frame. Turning
 Done: vendor-neutral synthesis (2026-09-12). yosys 0.57 from oss-cad-suite
 (`C:/oss-cad-suite/oss-cad-suite`, add its `bin` AND `lib` to PATH or the
 binaries fail on a missing DLL) synthesises the design via
-`scripts/synthesize_rtl.py`: 3,608 LUTs and 3,691 FFs generic after the divider
-work below, table in `docs/hardware.md`. It found a latch that simulation cannot: `median_filter`
-swapped through a module-level temporary assigned only inside `if` branches, so
-a latch was inferred for it and yosys refused the design. The comparator stages
-are concatenated swaps now, with no temporary — keep them that way.
+`scripts/synthesize_rtl.py`: 3,951 LUTs and 4,445 FFs generic after the
+pipeline work below, table in `docs/hardware.md`. It found a latch that
+simulation cannot: `median_filter` swapped through a module-level temporary
+assigned only inside `if` branches, so a latch was inferred for it and yosys
+refused the design. The comparator stages are concatenated swaps now, with no
+temporary — keep them that way.
 
 Done: the Wiener gain divider. It was a variable 32/24-bit divide per pixel
 and 87% of the logic; it is eight restoring steps now, which produce the same
@@ -156,17 +157,25 @@ the output rounding and nothing was re-characterised. Keep it that way: any
 future replacement that is genuinely approximate has to be re-characterised
 against the golden model and the budget re-justified.
 
-`acc / 2304` stays a division on purpose. The exact reciprocal multiply
-`(acc * 233017) >> 29` measured 129 LUTs *worse* under generic mapping (no DSP
-blocks); it should win on a real part. Do not adopt it without measuring on the
-vendor tool — the constant and derivation are in the module comment.
+Done: Wiener Fmax improvement (2026-09-30). Two pipeline stages added to break
+the critical paths on ECP5-25k: a pre-stage register after the window sums
+(broke the 25 ns input path) and an output-accumulator register plus reciprocal
+multiply for `acc / 2304` (broke the 49 ns carry-chain output path). Both are
+exact — the reciprocal multiply `floor(acc / 2304) = (acc × 233017) >> 29` is
+verified exhaustively over every `acc` in 0..1,173,897. Total Wiener latency is
+now 10 cycles (`PIPE_STAGES = 10` throughout the design). ECP5 Fmax: 20.42 →
+**30.23 MHz** (48% improvement). The critical path is now in filter_controller's
+combinational mux (~33 ns), not Wiener. LUT4: 2,052 → 1,835 (DSPs absorbed the
+multiply); MULT18X18D: 15 → 17 (2 DSPs for the reciprocal multiply).
 
-Next up: a board. `configs/hardware.yaml` names no vendor or device and
-**no board has been programmed**, so every board figure in `docs/hardware.md`
-is still `TBD` — generic LUT counts are not a fitter result, and there is no
-timing, no BRAM/DSP inference and no power number without one. Those tables get filled from a real toolchain run or not at all —
-timing, utilisation and power are measurements, and a plausible number in that
-table would be indistinguishable from a measured one.
+`acc / 2304` is now the reciprocal multiply on ECP5, where DSP blocks make it
+faster. The constant `RECIP = 233017 = floor(2^29 / 2304)` and shift `RECIP_SHR
+= 29` are in the module comment. Do not revert to integer division — it would
+reopen the 49 ns critical path.
+
+`configs/hardware.yaml` names the ECP5-25k device. **No board has been
+programmed** — all figures in `docs/hardware.md` are place-and-route results
+from `scripts/place_and_route.py`, not measurements on silicon. Power is TBD.
 
 ## The filters are a contract with the hardware
 

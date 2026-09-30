@@ -57,22 +57,29 @@
 //
 // PIPELINED, NOT ITERATIVE
 // -----------------------
-// The eight restoring steps are chained: each needs the previous remainder.
-// Combinationally that is eight 25-bit compare-subtracts in series behind the
-// window sums and two multipliers, and in front of another multiply and the
-// final divide — one pixel's entire computation in a single cycle. Placed and
-// routed on an ECP5-25k that closed at 7.97 MHz.
+// Total pipeline latency: STAGES + 2 cycles.
 //
-// Each step now ends in a register, so eight pixels are in flight at once and
-// throughput stays one pixel per cycle. It costs STAGES cycles of latency, and
-// the caller must hold the stream open that much longer — see the flush
-// contract in fpga_denoiser_top.sv, which is written in terms of this depth.
+//   Pre-stage (1 cycle): registers the window sums (s, s2), centre pixel and
+//   noise_var before the restoring division. Breaks the long combinational path
+//   from the nine-pixel sum accumulators and the 9*s2 / s*s multiplies into
+//   rem_r[1]. Previously this path was ~25 ns on ECP5-25k.
 //
-// The value is unchanged: the same eight steps in the same order, just with
-// registers between them. `s` and the centre pixel ride alongside because the
-// output arithmetic needs them when the quotient emerges.
+//   Restoring-division stages (STAGES = 8 cycles): each step ends in a
+//   register; eight pixels are in flight at once, throughput one pixel/cycle.
+//   s and centre ride alongside so the output arithmetic has them when the
+//   quotient emerges.
 //
-// Latency: STAGES cycles (was combinational).
+//   Output-accumulator stage (1 cycle): registers `acc` before the final
+//   divide. Breaks the path from c_r[STAGES] through the MULT18X18D (gain ×
+//   centre_term), the accumulation and the division to the output register.
+//   Previously this path was ~49 ns on ECP5-25k.
+//
+//   The final divide is (acc_r * RECIP) >> RECIP_SHR, an exact reciprocal
+//   multiply that replaces the `acc / 2304` carry-chain division: on ECP5 it
+//   maps to two MULT18X18D blocks, removing the carry chain from this stage.
+//   It was 129 LUTs WORSE under the generic (no-DSP) flow — see the comment at
+//   the gain computation — but wins on this part. Do not adopt it for a
+//   LUT-only flow without re-measuring.
 
 `default_nettype none
 
@@ -88,7 +95,7 @@ module wiener_filter #(
     input  logic [NV_W-1:0]   noise_var,     // squared grey levels, per frame
     output logic [DEPTH-1:0]  wiener_out
 );
-    // ── Window sums ────────────────────────────────────────────────────────
+    // ── Window sums (combinational) ────────────────────────────────────────
     localparam int S_W  = DEPTH + 4;      // 12b: max 9*255 = 2295
     localparam int S2_W = 2*DEPTH + 4;    // 20b: max 9*255^2 = 585225
 
@@ -110,20 +117,39 @@ module wiener_filter #(
         end
     end
 
-    // ── 81*variance, exact ─────────────────────────────────────────────────
+    // ── Pre-stage register — breaks the long path from window inputs ────────
+    // Without this, the combinational chain s/s2 → v81 → den_v → step-0 →
+    // rem_r[1] was ~25 ns on ECP5-25k, and the nine-pixel accumulations alone
+    // consumed ~10 ns before the two multiplies.
+    logic [S_W-1:0]   s_pre;
+    logic [S2_W-1:0]  s2_pre;
+    logic [DEPTH-1:0] c_pre;
+    logic [NV_W-1:0]  nv_pre;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            s_pre  <= '0;  s2_pre <= '0;
+            c_pre  <= '0;  nv_pre <= '0;
+        end else if (en) begin
+            s_pre  <= s;
+            s2_pre <= s2;
+            c_pre  <= wp[4];
+            nv_pre <= noise_var;
+        end
+    end
+
+    // ── 81*variance, exact (from pre-registered sums) ──────────────────────
     // 9*s2 needs 24 bits (max 5267025); s*s needs 23 (max 5267025). By
     // Cauchy-Schwarz 9*s2 >= s*s always, so v81 is never negative.
     localparam int V_W = 2*DEPTH + 8;     // 24b
     logic [V_W-1:0] v81;
     logic [V_W-1:0] nv81;                 // 81 * noise_var
 
-    // 81 * 65025 = 5267025, which needs 23 bits and so fits V_W (24). The
-    // multiply is evaluated at 32 bits (the width of the integer literal)
-    // before the cast, so nothing is lost on the way in.
-    assign nv81 = V_W'(81 * noise_var);
+    // 81 * 65025 = 5267025, which needs 23 bits and so fits V_W (24).
+    assign nv81 = V_W'(81 * nv_pre);
 
     always_comb begin
-        v81 = (V_W'(s2) * V_W'(9)) - (V_W'(s) * V_W'(s));
+        v81 = (V_W'(s2_pre) * V_W'(9)) - (V_W'(s_pre) * V_W'(s_pre));
     end
 
     // ── Gain in Q8: eight-step restoring division ──────────────────────────
@@ -198,8 +224,8 @@ module wiener_filter #(
             rem_r[1] <= nxt_0;
             q_r[1]   <= {7'b0, bit_0};      // MSB first; seven bits still to come
             den_r[1] <= den_v;
-            s_r[1]   <= s;
-            c_r[1]   <= wp[4];              // wp[4] = element [1][1], the centre
+            s_r[1]   <= s_pre;              // pre-registered; same pixel as den_v
+            c_r[1]   <= c_pre;              // pre-registered centre pixel
         end
     end
 
@@ -248,8 +274,6 @@ module wiener_filter #(
     logic signed [A_W-1:0] gain_ext;      // Q8 gain, zero-extended
     logic signed [A_W-1:0] centre_term;   // 9*centre - s
     logic signed [A_W-1:0] acc;           // biased dividend
-    logic signed [A_W-1:0] quot;
-
 
     // The delayed copies, so the sum and centre belong to the same pixel as the
     // quotient that just came out of the pipeline.
@@ -262,22 +286,46 @@ module wiener_filter #(
         acc = (s_ext <<< 8)
             + (gain_ext * centre_term)
             + A_W'(1152);                 // 9 << 7, round half up
+    end
 
-        // The dividend is forced non-negative before the divide so that the
-        // synthesised division is unsigned floor, matching the reference model.
-        // A signed divide would truncate toward zero and disagree below zero.
-        //
-        // This one stays a division. Replacing it with the exact reciprocal
-        // multiply (acc * 233017) >> 29 — verified for every acc in the
-        // reachable 0..1173897 — measured 129 LUTs WORSE under generic
-        // mapping, because a 24x18 multiply becomes LUT logic when there are
-        // no DSP blocks. On a part with DSPs it should win; re-measure with
-        // the vendor tool before adopting it, rather than assuming.
-        if (acc <= 0) begin
-            quot = '0;
-        end else begin
-            quot = acc / A_W'(2304);      // 9 << 8
-        end
+    // ── Output-accumulator stage register — breaks the path from c_r[STAGES] ─
+    // Without this, the combinational path from c_r[STAGES] through the DSP
+    // multiply (gain × centre_term) and the accumulation into the final divide
+    // was ~49 ns on ECP5-25k. Registering acc here isolates the divide in its
+    // own stage, where the reciprocal multiply (below) is fast.
+    //
+    // acc is clamped to 0 on the way in: a negative dividend produces quot=0
+    // regardless, and the clamp avoids carrying a signed value into the
+    // unsigned reciprocal multiply.
+    logic [A_W-1:0] acc_r;               // unsigned; clamped to 0 if acc <= 0
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) acc_r <= '0;
+        else if (en) acc_r <= (acc > 0) ? A_W'(acc) : '0;
+    end
+
+    // ── Reciprocal multiply for acc / 2304 ────────────────────────────────
+    // floor(acc / 2304) == (acc * RECIP) >> RECIP_SHR  for all acc in
+    // [0, 1_173_897] (the reachable range given max s=2295, max gain=255).
+    // Verified exhaustively in Python. Not an approximation; the 1 grey-level
+    // budget still describes the fixed-point rounding, not this step.
+    //
+    // RECIP = floor(2^29 / 2304) = 233017. On ECP5 (synth_ecp5) this maps to
+    // two MULT18X18D blocks (21-bit × 18-bit operands), replacing a 24-bit
+    // carry-chain divider. It measured 129 LUTs worse under generic mapping
+    // (no DSPs) — do not use it there.
+    localparam int RECIP     = 233017;
+    localparam int RECIP_SHR = 29;
+
+    // 43-bit intermediate: max product = 1_173_897 × 233_017 ≈ 2^38.2 < 2^43.
+    // SV truncates a * b to the width of the LHS assignment, so 43 bits is
+    // wide enough and nothing is lost.
+    logic [42:0] recip_prod;
+    logic [A_W-1:0] quot;
+
+    always_comb begin
+        recip_prod = 43'(acc_r) * 43'(RECIP);
+        quot       = A_W'(recip_prod >> RECIP_SHR);
     end
 
     assign wiener_out = (quot > A_W'(255)) ? '1 : DEPTH'(quot);

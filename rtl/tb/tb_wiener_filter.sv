@@ -48,17 +48,16 @@ module tb_wiener_filter;
     localparam int NV_W = 16;
     logic [NV_W-1:0] noise_var;
 
-    // The divider is pipelined now, so the DUT is clocked and its answer for a
-    // window appears STAGES cycles after that window is presented. This bench
-    // drives one window at a time and waits — throughput is the co-simulation's
-    // job; what is checked here is the value.
-    localparam int STAGES = 8;
+    // The pipeline has three stages: pre-stage register, WIENER_STAGES restoring
+    // steps, and an output-accumulator register.  Total latency = WIENER_STAGES+2.
+    localparam int WIENER_STAGES = 8;          // STAGES parameter passed to DUT
+    localparam int LATENCY       = WIENER_STAGES + 2;  // 10: total cycles to wait
 
     logic clk = 1'b0;
     logic rst_n;
     always #5 clk = ~clk;
 
-    wiener_filter #(.DEPTH(DEPTH), .NV_W(NV_W), .STAGES(STAGES)) dut (
+    wiener_filter #(.DEPTH(DEPTH), .NV_W(NV_W), .STAGES(WIENER_STAGES)) dut (
         .clk(clk),
         .rst_n(rst_n),
         .en(1'b1),
@@ -70,7 +69,7 @@ module tb_wiener_filter;
     // Present a window and wait for its result to emerge. Inputs change on the
     // falling edge so they are stable at every posedge the pipeline samples.
     task automatic settle;
-        repeat (STAGES) @(posedge clk);
+        repeat (LATENCY) @(posedge clk);
         #1;
     endtask
 

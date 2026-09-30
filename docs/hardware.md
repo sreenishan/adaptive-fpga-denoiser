@@ -43,7 +43,8 @@ module never grew.
 in the generator that cycle, which trails the input pixel by IMG_WIDTH+1. Change
 them between frames.
 
-**Latency and flush.** The Wiener divider is pipelined `PIPE_STAGES` = 8 deep,
+**Latency and flush.** The Wiener divider is pipelined `PIPE_STAGES` = 10 deep
+(8 restoring steps + 1 pre-stage register + 1 output-accumulator register),
 so the first `m_valid` appears `LATENCY` = IMG_WIDTH+3+PIPE_STAGES advances
 after the first pixel, and the drain is `FLUSH_CYCLES` = IMG_WIDTH+2+PIPE_STAGES.
 Both are localparams in `rtl/fpga_denoiser_top.sv`; read them rather than
@@ -85,14 +86,14 @@ all, and where does the logic go.
 
 | Module | LUTs | FFs |
 |---|---:|---:|
-| `wiener_filter` | 2,489 | 556 |
+| `wiener_filter` | 3,287 | 636 |
 | `line_buffer` | 0 | 3,584 |
-| `median_filter` | 415 | 0 |
-| `window_gen` | 113 | 97 |
-| `gaussian_filter` | 110 | 0 |
-| `filter_controller` | 17 | 97 |
+| `median_filter` | 408 | 0 |
+| `window_gen` | 112 | 97 |
+| `gaussian_filter` | 112 | 0 |
+| `filter_controller` | 17 | 119 |
 | `fpga_denoiser_top` | 15 | 9 |
-| **Total** | **3,159** | **4,343** |
+| **Total** | **3,951** | **4,445** |
 
 Two things to know before choosing a part:
 
@@ -123,22 +124,26 @@ nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 | | Fmax | TRELLIS_FF | MULT18X18D |
 |---|---:|---:|---:|
 | Combinational divider | 7.97 MHz | 3,691 | 15 |
-| Pipelined, 8 stages | **18.15 MHz** | 4,343 | 15 |
+| Pipelined, 8 stages | 18.15 MHz | 4,343 | 15 |
+| Pipelined + reciprocal multiply | **30.23 MHz** | 4,445 | 17 |
 
-Generic LUTs fell too (3,608 -> 3,159), because registering the chain lets yosys
-share logic it previously had to flatten. **This is an ECP5 number and the board
-tables below are still `TBD`** — it is a like-for-like comparison of two versions
-of this design on one part, not a claim about any target hardware.
+The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
+input path) and an output-accumulator register plus reciprocal multiply (breaks
+the 49 ns `c_r[8]` → multiply → carry chain output path). Both are exact — the
+reciprocal multiply `floor(acc / 2304) = (acc × 233017) >> 29` is verified
+exhaustively over every `acc` in 0..1,173,897 — so the 1 grey level budget is
+unchanged. Total latency is now 10 cycles (8 restoring + 2 extra registers).
+**This is an ECP5 number** — it is a like-for-like comparison on one part, not a
+claim about any target hardware.
 
-`wiener_filter` is still 79% of the logic, so it remains the place to look.
+The current critical path (33.08 ns) is no longer in the Wiener filter: it is
+now the filter_controller combinational mux (gaussian/median/bypass output)
+passing through a CCU2C carry cell before registering into `comb_d[1]`.
 
-**The remaining constant divide is deliberate.** `acc / 2304` could be the exact
-reciprocal multiply `(acc * 233017) >> 29` — verified for every `acc` in the
-reachable range 0..1,173,897 — but that measured **129 LUTs worse** here,
-because a 24x18 multiply becomes LUT logic when the flow has no DSP blocks. On
-a part with DSPs it should win. The constant and its derivation are in the
-module comment; re-measure with the vendor tool rather than assuming either
-way.
+**The reciprocal multiply uses 2 extra MULT18X18D blocks** (15 → 17 = 60% of
+28) and costs **2 extra flip-flops** in Wiener. The generic LUT count is higher
+(3,951 vs 3,159) because a 43×18 multiply is LUT logic without DSPs; on ECP5
+nextpnr maps it to two MULT18X18D, which is why the ECP5 LUT count dropped.
 
 **The line buffer is 3,584 flip-flops here, and should not be on a real part.**
 It is written as two 224-deep shift registers. In this generic flow yosys maps
@@ -157,21 +162,22 @@ nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
-| LUT4 | 2,052 | 24,288 | 8% |
-| TRELLIS_FF | 4,343 | 24,288 | 17% |
-| BRAM18 | 0 | 56 | 0% |
-| MULT18X18D (DSP) | 15 | 28 | 53% |
+| LUT4 | 1,835 | 24,288 | 7% |
+| TRELLIS_FF | 4,445 | 24,288 | 18% |
+| DP16KD (BRAM18) | 0 | 56 | 0% |
+| MULT18X18D (DSP) | 17 | 28 | 60% |
 
-**The line buffer is still discrete flip-flops (3,584 of the 4,343 FFs).**
+**The line buffer is still discrete flip-flops (3,584 of the 4,445 FFs).**
 It is written as two 224-deep shift registers; nextpnr did not infer block RAM
 for them, exactly as the generic-synthesis note warned.  Replacing the
 shift registers with an explicit BRAM instantiation would free ~3,500 FFs and
 move the line buffer to BRAM (2 × 18 kb blocks) — a straightforward
 improvement for a future commit.
 
-**The 15 MULT18X18D blocks are 53% of the available DSPs.**  They come from
-the Wiener filter's mean and variance arithmetic.  That is acceptable on a
-25k part but would be the first thing to check on a smaller device.
+**The 17 MULT18X18D blocks are 60% of the available DSPs.**  15 come from the
+Wiener filter's mean and variance arithmetic; 2 are the reciprocal-multiply
+for `acc / 2304`.  That is acceptable on a 25k part but would be the first
+thing to check on a smaller device.
 
 ## Timing
 
@@ -180,20 +186,21 @@ From nextpnr-ecp5 0.9-2, `--freq 100 --lpf-allow-unconstrained`, seed 1.
 | Item | Value |
 |---|---|
 | Clock target | 100 MHz |
-| Achieved Fmax | 20.42 MHz |
+| Achieved Fmax | 30.23 MHz |
 | Timing closure | FAIL |
-| Critical path | Wiener filter: carry-chain through `rem_r` registers (~49 ns) |
+| Critical path | filter_controller mux → CCU2C carry cell → `comb_d[1]` (~33 ns) |
 
-The design does not close timing at 100 MHz.  The critical path is the
-multi-cycle carry chain in the Wiener restoring divider.  The `--lpf-allow-unconstrained`
-flag means the clock enters through a general I/O cell; a dedicated clock pin
-(LOCATE COMP "clk" SITE "...") would reduce I/O overhead but would not fix the
-combinational depth.
+The design does not close timing at 100 MHz.  The critical path has moved out
+of the Wiener filter: it is now the combinational bypass/median/Gaussian result
+mux in filter_controller passing through a CCU2C carry adder before registering
+into `comb_d[1]`.  The `--lpf-allow-unconstrained` flag means the clock enters
+through a general I/O cell; a dedicated clock pin (LOCATE COMP "clk" SITE "...")
+would reduce I/O overhead but would not fix the combinational depth.
 
 **Next steps to improve Fmax** (in order of likely impact):
-1. Register the carry chain across the eight restoring steps rather than computing
-   all steps in one cycle — the `PIPE_STAGES` mechanism already exists for this.
-2. Use a dedicated clock pin via a LOCATE constraint.
+1. Register the filter_controller output mux into an intermediate stage to break
+   the 33 ns CCU2C carry-chain path.
+2. Use a dedicated clock pin via a LOCATE constraint in `ecp5_25k.lpf`.
 3. Target a 45k or 85k ECP5 with a higher speed grade.
 
 ## Power

@@ -43,11 +43,13 @@ module filter_controller #(
     gaussian_filter #(.DEPTH(DEPTH))
         u_gaussian (.win_flat(win_flat), .gaussian_out(gaussian_px));
 
-    // The Wiener divider is pipelined, so its answer for this window arrives
-    // DIV_STAGES cycles from now. This must equal wiener_filter's STAGES.
-    localparam int DIV_STAGES = 8;
+    // Total pipeline latency of wiener_filter: STAGES(8) + pre-stage(1) +
+    // output-acc-stage(1) = 10. The delay chains for the combinational paths
+    // (comb_d, sel_d, vld_d) must match this so all paths emerge together.
+    localparam int WIENER_STAGES = 8;   // restoring-division stages (wiener_filter param)
+    localparam int DIV_STAGES    = 10;  // total wiener pipeline latency
 
-    wiener_filter  #(.DEPTH(DEPTH), .NV_W(NV_W), .STAGES(DIV_STAGES))
+    wiener_filter  #(.DEPTH(DEPTH), .NV_W(NV_W), .STAGES(WIENER_STAGES))
         u_wiener  (.clk(clk), .rst_n(rst_n), .en(en),
                    .win_flat(win_flat), .noise_var(noise_var), .wiener_out(wiener_px));
 

@@ -97,8 +97,9 @@ module tb_filter_controller;
     // ── Helpers ────────────────────────────────────────────────────────────
     int errors;
 
-    // Must match DIV_STAGES in filter_controller.sv, plus the output register.
-    localparam int DIV_STAGES = 8;
+    // Must match DIV_STAGES in filter_controller.sv (wiener total latency = 10),
+    // plus the output register.
+    localparam int DIV_STAGES = 10;
     localparam int LATENCY    = DIV_STAGES + 1;
 
     // Drive one window for one cycle, then wait LATENCY cycles for it to come
