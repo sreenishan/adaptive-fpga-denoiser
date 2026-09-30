@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import torch
+torch = pytest.importorskip("torch", reason="PyTorch not installed or blocked")
 
 from denoising.config import CLASSES, load_inference_config, load_training_config
 from denoising.model.cnn import NoiseClassifierCNN, build_model, model_info

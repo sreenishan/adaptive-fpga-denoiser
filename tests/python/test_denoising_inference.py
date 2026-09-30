@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import torch
+torch = pytest.importorskip("torch", reason="PyTorch not installed or blocked")
 
 from denoising.model.dncnn import build_dncnn
 from denoising.model.inference_denoiser import DnCNNInferencer, load_denoiser

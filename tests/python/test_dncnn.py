@@ -13,7 +13,7 @@ These tests verify the architecture contract without a dataset:
 from __future__ import annotations
 
 import pytest
-import torch
+torch = pytest.importorskip("torch", reason="PyTorch not installed or blocked")
 
 from denoising.model.dncnn import DnCNN, build_dncnn
 
