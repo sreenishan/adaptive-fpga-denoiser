@@ -43,8 +43,8 @@ module never grew.
 in the generator that cycle, which trails the input pixel by IMG_WIDTH+1. Change
 them between frames.
 
-**Latency and flush.** The filter_controller pipeline is `PIPE_STAGES` = 13 deep
-(1 win-input + 1 gaussian-row + 1 comb-pre + 10 delay-chain/Wiener stages), so
+**Latency and flush.** The filter_controller pipeline is `PIPE_STAGES` = 14 deep
+(1 win-input + 1 gaussian-row + 1 comb-pre + 11 delay-chain/Wiener stages), so
 the first `m_valid` appears `LATENCY` = IMG_WIDTH+3+PIPE_STAGES advances after
 the first pixel, and the drain is `FLUSH_CYCLES` = IMG_WIDTH+2+PIPE_STAGES.
 Both are localparams in `rtl/fpga_denoiser_top.sv`; read them rather than
@@ -134,7 +134,8 @@ nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 | + filter_controller pre-register | 29.87 MHz | 888 | 2 | 17 |
 | + filter_controller win-input register | 36.51 MHz | 963 | 2 | 17 |
 | + gaussian accumulator pipeline | 36.65 MHz | 1,015 | 2 | 17 |
-| + median comparator pipeline | **49.15 MHz** | **1,079** | **2** | 17 |
+| + median comparator pipeline | 49.15 MHz | 1,079 | 2 | 17 |
+| + Wiener variance stage pipeline | **49.36 MHz** | **1,181** | **2** | 17 |
 
 The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
 input path) and an output-accumulator register plus reciprocal multiply (breaks
@@ -175,11 +176,24 @@ from the critical path; nextpnr now reports `u_wiener.s_pre` Q → `den_v` →
 `MULT18X18D` (~20 ns) — the Wiener variance computation. TRELLIS_FF: 1,015 →
 1,079 (+64 = 9×8-bit median column-sort register − 8-bit median_r removed).
 
+The ninth row pipelines the Wiener variance computation: a new variance-stage
+register inside `wiener_filter` captures `p1_r = 9*s2_pre` (shift+add carry
+chain, ~6 ns from `s2_pre` Q) and `p2_r = s_pre*s_pre` (MULT18X18D, ~4 ns from
+`s_pre` Q) before the subtraction.  After the register, `v81 = p1_r - p2_r` is
+a fast 24-bit subtraction (~5 ns) and the remaining path to `rem_r[1]` is
+short.  Wiener total latency: 10 → 11 cycles (STAGES+3); filter_controller
+`DIV_STAGES` 10 → 11; `PIPE_STAGES` 13 → 14; total pipeline latency 14 → 15
+cycles.  Fmax: 49.15 → **49.36 MHz** (+0.4% — routing noise; two paths are now
+neck-and-neck at ~20 ns).  The Wiener variance path is no longer critical;
+nextpnr now reports `u_median.q[4]` Q → median stage-2 carry chain → `comb_r`
+(~20 ns).  TRELLIS_FF: 1,079 → 1,181 (+102 for p1_r + p2_r + nv81_r + s_r0 +
+c_r0 registers and one extra delay-chain stage); TRELLIS_COMB: 1,816 → 1,963.
+
 **This is an ECP5 number** — it is a like-for-like comparison on one part, not a
 claim about any target hardware.
 
-The current critical path (~27 ns) is win_r Q → gaussian/median accumulator
-carry chain → comb_px mux → comb_r setup.
+The current critical path (~20 ns) is `u_median.q[4]` Q → median stage-2 carry
+chain → `comb_r` setup.
 
 **The reciprocal multiply uses 2 extra MULT18X18D blocks** (15 → 17 = 60% of
 28) and costs **2 extra flip-flops** in Wiener. The generic LUT count is higher
@@ -203,8 +217,8 @@ nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
-| LUT4 | 1,816 | 24,288 | 7% |
-| TRELLIS_FF | 1,079 | 24,288 | 4% |
+| TRELLIS_COMB (LUT4) | 1,963 | 24,288 | 8% |
+| TRELLIS_FF | 1,181 | 24,288 | 4% |
 | DP16KD (BRAM18) | 2 | 56 | 3% |
 | MULT18X18D (DSP) | 17 | 28 | 60% |
 
@@ -225,22 +239,24 @@ From nextpnr-ecp5 0.9-2, `--freq 100 --lpf-allow-unconstrained`, seed 1.
 | Item | Value |
 |---|---|
 | Clock target | 100 MHz |
-| Achieved Fmax | 49.15 MHz |
+| Achieved Fmax | 49.36 MHz |
 | Timing closure | FAIL |
-| Critical path | `u_wiener.s_pre` Q → `den_v` → `MULT18X18D` input (~20 ns) |
+| Critical path | `u_median.q[4]` Q → median stage-2 carry chain → `comb_r` setup (~20 ns) |
 
 The design does not close timing at 100 MHz.  The `--lpf-allow-unconstrained`
 flag means the clock enters through a general I/O cell; a dedicated clock pin
 (LOCATE COMP "clk" SITE "...") would reduce I/O overhead.
 
-The critical path is now inside `wiener_filter`: `s_pre` Q (the Wiener
-pre-stage register) feeds into the variance computation `den_v` and then
-into a `MULT18X18D` input (~20 ns).  The filter_controller carry chains are
-no longer in the path.
+The critical path is now inside `median_filter` stage 2: `q[4]` Q (the
+column-sort pipeline register) feeds through the 5-comparator median-selection
+network (steps 10-19) into the `comb_r` pre-register in filter_controller
+(~20 ns).  Both the Wiener variance path and this median path are ~20 ns;
+pipelining the Wiener variance stage shifted the bottleneck here.
 
 **Next steps to improve Fmax** (in order of likely impact):
-1. Pipeline the Wiener variance path — register between `s_pre` and the
-   multiplier inputs.
+1. Pipeline the median stage-2 network — add a register after step 15 (the
+   "discard extremes" phase), splitting the 5-comparator stage 2 into two
+   shorter sub-stages.
 2. Use a dedicated clock pin via a LOCATE constraint in `ecp5_25k.lpf`.
 3. Target a 45k or 85k ECP5 with a higher speed grade.
 

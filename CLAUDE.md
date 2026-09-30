@@ -157,20 +157,28 @@ the output rounding and nothing was re-characterised. Keep it that way: any
 future replacement that is genuinely approximate has to be re-characterised
 against the golden model and the budget re-justified.
 
-Done: Wiener Fmax improvement (2026-09-30). Two pipeline stages added to break
+Done: Wiener Fmax improvement (2026-09-30). Three pipeline stages added to break
 the critical paths on ECP5-25k: a pre-stage register after the window sums
-(broke the 25 ns input path) and an output-accumulator register plus reciprocal
-multiply for `acc / 2304` (broke the 49 ns carry-chain output path). Both are
-exact — the reciprocal multiply `floor(acc / 2304) = (acc × 233017) >> 29` is
-verified exhaustively over every `acc` in 0..1,173,897. Total Wiener latency is
-now 10 cycles (Wiener latency). ECP5 Fmax at that stage: 20.42 → 30.23 MHz
-(48% improvement). LUT4: 2,052 → 1,835 (DSPs absorbed the multiply);
-MULT18X18D: 15 → 17 (2 DSPs for the reciprocal multiply).
+(broke the 25 ns input path), an output-accumulator register plus reciprocal
+multiply for `acc / 2304` (broke the 49 ns carry-chain output path), and a
+variance-stage register capturing `p1_r = 9*s2_pre` and `p2_r = s_pre*s_pre`
+before the subtraction (broke the ~20 ns path from `s_pre/s2_pre` through
+`den_v` to `rem_r[1]`). All are exact. Wiener total latency is now 11 cycles
+(STAGES+3 = 8+3). ECP5 Fmax at that stage: 20.42 → 30.23 → 49.36 MHz.
+MULT18X18D: 15 → 17 (2 DSPs for the reciprocal multiply; variance stage uses
+the same DSPs already present).
 
 `acc / 2304` is now the reciprocal multiply on ECP5, where DSP blocks make it
 faster. The constant `RECIP = 233017 = floor(2^29 / 2304)` and shift `RECIP_SHR
 = 29` are in the module comment. Do not revert to integer division — it would
 reopen the 49 ns critical path.
+
+The variance-stage register captures `p1_r = 9*s2_pre` and `p2_r = s_pre*s_pre`
+before the `v81 = p1_r - p2_r` subtraction. The key insight: both products are
+~5-8 ns from the pre-stage registers, but the full chain through the subtraction
+and `den_v` comparison was ~20 ns. After the register, `v81 = p1_r - p2_r` is a
+single fast subtraction. Do not collapse these back into one cycle — it would
+reopen the 20 ns critical path.
 
 Done: BRAM line buffer (2026-09-30). `line_buffer.sv` rewrote the two 224-deep
 shift registers as circular buffers (synchronous dual-port memory pattern).
@@ -220,8 +228,21 @@ unchanged (PIPE_STAGES = 13, total latency = 14). Fmax: 36.65 → **49.15 MHz**
 as `u_wiener.s_pre` Q → `den_v` → MULT18X18D input (~20 ns). TRELLIS_FF:
 1,015 → 1,079 (+64). All 5 unit benches and 6 slow RTL tests pass.
 
-The current critical path (~20 ns) is Wiener s_pre Q → den_v → MULT18X18D.
-To improve Fmax further, pipeline the Wiener variance computation.
+Done: Wiener variance stage pipeline (2026-09-30). A variance-stage register
+inside `wiener_filter` captures `p1_r = 9*s2_pre` (shift+add, ~6 ns) and
+`p2_r = s_pre*s_pre` (MULT18X18D, ~4 ns) before the `v81 = p1_r - p2_r`
+subtraction. `nv81_r = 81*nv_pre` and the s/centre pixel are also latched here.
+After the register, `v81` is a fast subtraction and the path to `rem_r[1]` is
+short. Wiener latency: 10 → 11 cycles (STAGES+3); DIV_STAGES: 10 → 11;
+PIPE_STAGES: 13 → 14; total latency: 14 → 15 cycles.
+Fmax: 49.15 → **49.36 MHz** (+0.4% — both Wiener variance and median stage-2
+paths were ~20 ns; pipelining the Wiener path transferred the critical path to
+median stage-2). TRELLIS_FF: 1,079 → 1,181 (+102); TRELLIS_COMB: 1,816 → 1,963.
+All 5 unit benches pass.
+
+The current critical path (~20 ns) is `u_median.q[4]` Q → median stage-2
+carry chain (5 comparators) → `comb_r`. To improve Fmax further, pipeline the
+median stage-2 network.
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results

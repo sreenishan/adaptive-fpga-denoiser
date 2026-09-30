@@ -57,12 +57,16 @@
 //
 // PIPELINED, NOT ITERATIVE
 // -----------------------
-// Total pipeline latency: STAGES + 2 cycles.
+// Total pipeline latency: STAGES + 3 cycles.
 //
 //   Pre-stage (1 cycle): registers the window sums (s, s2), centre pixel and
-//   noise_var before the restoring division. Breaks the long combinational path
-//   from the nine-pixel sum accumulators and the 9*s2 / s*s multiplies into
-//   rem_r[1]. Previously this path was ~25 ns on ECP5-25k.
+//   noise_var before the variance computation. Breaks the long combinational
+//   path from the nine-pixel sum accumulators into a shorter first hop.
+//
+//   Variance stage (1 cycle): registers num_v (= max(0, v81-81*NV)) and den_v
+//   (= max(v81, 81*NV)) after the MULT18X18D that computes s_pre*s_pre.
+//   Breaks the path: s_pre Q → s_pre*s_pre (DSP) → v81 subtract → den_v
+//   compare → rem_r[1] setup, which was ~20 ns on ECP5-25k.
 //
 //   Restoring-division stages (STAGES = 8 cycles): each step ends in a
 //   register; eight pixels are in flight at once, throughput one pixel/cycle.
@@ -142,14 +146,33 @@ module wiener_filter #(
     // 9*s2 needs 24 bits (max 5267025); s*s needs 23 (max 5267025). By
     // Cauchy-Schwarz 9*s2 >= s*s always, so v81 is never negative.
     localparam int V_W = 2*DEPTH + 8;     // 24b
-    logic [V_W-1:0] v81;
-    logic [V_W-1:0] nv81;                 // 81 * noise_var
 
-    // 81 * 65025 = 5267025, which needs 23 bits and so fits V_W (24).
-    assign nv81 = V_W'(81 * nv_pre);
+    // ── Variance stage register — registers the two products before the ─────
+    // subtraction.  Both p1 = 9*s2_pre (shift+add carry chain) and
+    // p2 = s_pre*s_pre (MULT18X18D) are only ~5-8 ns from the pre-stage
+    // registers; the full path through the subtraction and den_v comparison
+    // was ~20 ns on ECP5-25k.  After registration, v81 = p1_r - p2_r is a
+    // single 24-bit subtraction (~5 ns), leaving budget for step-0 and
+    // rem_r[1] setup.
+    //
+    // nv81_r = 81*nv_pre is also registered here so it stays aligned with p1_r.
+    logic [V_W-1:0]  p1_r;    // 9*s2_pre, registered
+    logic [V_W-1:0]  p2_r;    // s_pre*s_pre, registered
+    logic [V_W-1:0]  nv81_r;  // 81*nv_pre, registered; 81*65025=5267025 fits 24b
+    logic [S_W-1:0]  s_r0;    // sum, latched alongside
+    logic [DEPTH-1:0] c_r0;   // centre pixel, latched alongside
 
-    always_comb begin
-        v81 = (V_W'(s2_pre) * V_W'(9)) - (V_W'(s_pre) * V_W'(s_pre));
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            p1_r   <= '0; p2_r   <= '0; nv81_r <= '0;
+            s_r0   <= '0; c_r0   <= '0;
+        end else if (en) begin
+            p1_r   <= V_W'(V_W'(s2_pre) * V_W'(9));
+            p2_r   <= V_W'(V_W'(s_pre)  * V_W'(s_pre));
+            nv81_r <= V_W'(81 * nv_pre);
+            s_r0   <= s_pre;
+            c_r0   <= c_pre;
+        end
     end
 
     // ── Gain in Q8: eight-step restoring division ──────────────────────────
@@ -178,12 +201,14 @@ module wiener_filter #(
     // Every signal below is assigned unconditionally on every iteration. A
     // value written only inside a branch would infer a latch, which is how the
     // median network's temporary was caught.
+    logic [V_W-1:0] v81;     // 9*s2 - s^2, combinational from variance-stage regs
     logic [V_W-1:0] num_v, den_v;
     logic [7:0]     gain_q8;
 
     always_comb begin
-        num_v = (v81 > nv81) ? (v81 - nv81) : '0;
-        den_v = (v81 > nv81) ? v81 : nv81;
+        v81   = p1_r - p2_r;                           // fast subtraction
+        num_v = (v81 > nv81_r) ? (v81 - nv81_r) : '0;
+        den_v = (v81 > nv81_r) ? v81 : nv81_r;
     end
 
     // Pipeline registers, index 1..STAGES: the value after that many stages.
@@ -206,7 +231,8 @@ module wiener_filter #(
     logic         bit_c [1:STAGES-1];
     logic [V_W:0] nxt_c [1:STAGES-1];
 
-    // Step 1 works on the combinational front end (sums, v81, num/den).
+    // Step 1 works from the variance-stage register outputs (v81 = p1_r - p2_r,
+    // num_v, den_v) — all fast combinational from registered products.
     logic [V_W:0] sh_0, nxt_0;
     logic         bit_0;
     assign sh_0  = {1'b0, num_v} << 1;
@@ -223,9 +249,9 @@ module wiener_filter #(
         end else if (en) begin
             rem_r[1] <= nxt_0;
             q_r[1]   <= {7'b0, bit_0};      // MSB first; seven bits still to come
-            den_r[1] <= den_v;
-            s_r[1]   <= s_pre;              // pre-registered; same pixel as den_v
-            c_r[1]   <= c_pre;              // pre-registered centre pixel
+            den_r[1] <= den_v;              // from variance-stage register output
+            s_r[1]   <= s_r0;              // from variance-stage register
+            c_r[1]   <= c_r0;              // from variance-stage register
         end
     end
 

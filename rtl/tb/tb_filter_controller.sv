@@ -97,9 +97,9 @@ module tb_filter_controller;
     // ── Helpers ────────────────────────────────────────────────────────────
     int errors;
 
-    // Must match DIV_STAGES+4 in filter_controller.sv (win-input + gaussian-row + comb + DIV_STAGES + output),
+    // Must match DIV_STAGES+4 in filter_controller.sv (win-input + gaussian-row + comb + DIV_STAGES + output).
     // plus the output register.
-    localparam int DIV_STAGES = 10;
+    localparam int DIV_STAGES = 11;
     localparam int LATENCY    = DIV_STAGES + 4;
 
     // Drive one window for one cycle, then wait LATENCY cycles for it to come
