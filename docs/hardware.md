@@ -44,7 +44,7 @@ in the generator that cycle, which trails the input pixel by IMG_WIDTH+1. Change
 them between frames.
 
 **Latency and flush.** The filter_controller pipeline is `PIPE_STAGES` = 17 deep
-(1 win-input + 1 gaussian-row/G1 + 1 median-align/G2 + 1 comb-pre + 13 delay-chain/Wiener stages), so
+(1 win-input + 1 G1 + 1 G2 + 1 G3 + 1 G4 + 1 comb-pre + 11 delay-chain/Wiener stages), so
 the first `m_valid` appears `LATENCY` = IMG_WIDTH+3+PIPE_STAGES advances after
 the first pixel, and the drain is `FLUSH_CYCLES` = IMG_WIDTH+2+PIPE_STAGES.
 Both are localparams in `rtl/fpga_denoiser_top.sv`; read them rather than
@@ -142,7 +142,8 @@ nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 | + Wiener gain-product pipeline | 88.58 MHz | 1,375 | 2 | 17 |
 | + Wiener reciprocal-product pipeline | 93.76 MHz | 1,399 | 2 | 17 |
 | + Wiener den_v pipeline | 94.30 MHz | 1,478 | 2 | 17 |
-| + median stage-1 column-sort pipeline | **102.16 MHz** | **1,550** | **2** | 17 |
+| + median stage-1 column-sort pipeline | 102.16 MHz | 1,550 | 2 | 17 |
+| + median stage-2b-a pipeline | **102.18 MHz** | **1,574** | **2** | 17 |
 
 The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
 input path) and an output-accumulator register plus reciprocal multiply (breaks
@@ -306,12 +307,32 @@ by the extra fixed stage); `PIPE_STAGES` and total latency are **unchanged** at
 `u_ctrl.comb_r` setup (~10.45 ns).  TRELLIS_FF: 1,478 → 1,550 (+72 = s1_r[0..8]
 nine 8-bit registers); TRELLIS_COMB: 1,889 → 1,890 (+1, routing).
 
+The seventeenth row pipelines the median stage-2b comparator network:
+`median_filter`'s three-comparator stage-2b (steps 17-19) is split after step 17
+by inserting `w_r[0..8]` between stage 2b-a (step 17: CS(4,2), 1 comparator deep
+from `r[]`) and stage 2b-b (steps 18-19: CS(6,4) then CS(4,2), 2 comparators
+deep from `w_r[]`).  The old path was `r[]` Q → 3 comparators → `comb_r` setup
+(~10.45 ns); after the register, the worst sub-path is `w_r` Q → 2 comparators
+→ `comb_r` setup (~7 ns).  Not an approximation — arithmetic is identical.
+`median_filter` latency: 3 → 4 cycles.  `filter_controller` adds Stage G4
+(1 extra delay cycle for gaussian/bypass); `DIV_STAGES` 12 → 11; `PIPE_STAGES`
+and total latency are **unchanged** at 17/18 cycles.  Fmax: 102.16 → **102.18 MHz**
+(+0.02% — the stage-2b path was broken, but the Wiener row-partial-sum path at
+~10.23 ns was just behind it and is now critical).  New critical path:
+`u_ctrl.win_r` Q → `u_wiener.rs2[1]` MULT18X18D → CCU2C carry chain →
+`u_wiener.rs2_r[1]` setup (~10.23 ns) — the row-partial sum-of-squares accumulator.
+TRELLIS_FF: 1,550 → 1,574 (+24 = w_r + gaussian_r4 + centre_r4 + sel_wr5 +
+vld_wr5 — placement-merged so fewer FFs than the raw bit count); TRELLIS_COMB:
+1,890 → 1,887 (−3, simpler 2-comparator stage 2b-b).
+
 **This is an ECP5 number** — it is a like-for-like comparison on one part, not a
 claim about any target hardware.
 
-The current critical path (~10.45 ns) is `u_ctrl.u_median.r[4]` Q → median
-stage-2b (steps 17-19, 3 comparators deep from `r[]`) → `u_ctrl.comb_r` setup.
-To improve further, pipeline inside the median stage-2b comparator network.
+The current critical path (~10.23 ns) is `u_ctrl.win_r` Q →
+`u_wiener.rs2[1]` MULT18X18D → CCU2C carry chain → `u_wiener.rs2_r[1]` setup —
+the Wiener row-partial sum-of-squares accumulator inside `wiener_filter`.
+To improve further, pipeline the row-partial sum-of-squares accumulation
+(split `rs2_pre` accumulation across two cycles, adding one stage to DIV_STAGES).
 
 **The reciprocal multiply uses 2 extra MULT18X18D blocks** (15 → 17 = 60% of
 28) and costs **2 extra flip-flops** in Wiener. The generic LUT count is higher
@@ -335,8 +356,8 @@ nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
-| TRELLIS_COMB (LUT4) | 1,890 | 24,288 | 8% |
-| TRELLIS_FF | 1,550 | 24,288 | 6% |
+| TRELLIS_COMB (LUT4) | 1,887 | 24,288 | 8% |
+| TRELLIS_FF | 1,574 | 24,288 | 6% |
 | DP16KD (BRAM18) | 2 | 56 | 3% |
 | MULT18X18D (DSP) | 17 | 28 | 60% |
 
@@ -357,21 +378,22 @@ From nextpnr-ecp5 0.9-2, `--freq 100 --lpf-allow-unconstrained`, seed 1.
 | Item | Value |
 |---|---|
 | Clock target | 100 MHz |
-| Achieved Fmax | 102.16 MHz |
+| Achieved Fmax | 102.18 MHz |
 | Timing closure | PASS at 100 MHz |
-| Critical path | `r[4]` Q → stage-2b (steps 17-19, 3 comparators) → `comb_r` setup (~10.45 ns) |
+| Critical path | `win_r` Q → `rs2[1]` MULT18X18D → CCU2C carry chain → `rs2_r[1]` setup (~10.23 ns) |
 
 The design closes timing at 100 MHz.  The `--lpf-allow-unconstrained`
 flag means the clock enters through a general I/O cell; a dedicated clock pin
 (LOCATE COMP "clk" SITE "...") would reduce I/O overhead.
 
-The critical path is in the median filter stage-2b: `u_ctrl.u_median.r[4]` Q →
-the final three comparators (steps 17-19, 3 carry chains deep) → `u_ctrl.comb_r`
-setup (~10.45 ns total).
+The critical path is in the Wiener filter's row-partial sum-of-squares
+accumulator: `u_ctrl.win_r` Q → `u_wiener.rs2[1]` MULT18X18D (squaring a window
+pixel) → CCU2C carry chain (3-pixel row partial sum of squares) →
+`u_wiener.rs2_r[1]` setup (~10.23 ns total).
 
 **Next steps to improve Fmax** (in order of likely impact):
-1. Pipeline the median stage-2b comparator network (steps 17-19, 3 deep →
-   split at step 18 to break the ~10.45 ns path).
+1. Pipeline the Wiener row-partial sum-of-squares accumulator (split the
+   MULT18X18D → carry-chain path with a mid-accumulation register).
 2. Use a dedicated clock pin via a LOCATE constraint in `ecp5_25k.lpf`.
 3. Target a 45k or 85k ECP5 with a higher speed grade.
 

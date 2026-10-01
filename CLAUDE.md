@@ -334,9 +334,26 @@ comparators deep) → `u_ctrl.comb_r` setup (~10.45 ns). TRELLIS_FF: 1,478 →
 1,550 (+72 = s1_r[0..8]); TRELLIS_COMB: 1,889 → 1,890 (+1). All 5 unit benches
 pass. Design **now closes timing at 100 MHz** on ECP5-25k.
 
-The current critical path (~10.45 ns) is `u_ctrl.u_median.r[4]` Q → median
-stage-2b (steps 17-19, 3 comparators deep from `r[]`) → `u_ctrl.comb_r` setup.
-To improve Fmax further, pipeline inside the median stage-2b comparator network.
+Done: median stage-2b-a pipeline (2026-10-01). `median_filter`'s three-comparator
+stage-2b (steps 17-19) split after step 17 by inserting register `w_r[0..8]`:
+stage 2b-a (step 17: CS(4,2), 1 comparator deep from `r[]`) → `w_r` → stage 2b-b
+(steps 18-19: CS(6,4) then CS(4,2), 2 comparators deep). The old path was `r[]`
+Q → 3 comparators → `comb_r` setup (~10.45 ns); after the register the worst
+sub-path is `w_r` Q → 2 comparators → `comb_r` (~7 ns). Not an approximation.
+`median_filter` latency: 3 → 4 cycles. `filter_controller` adds Stage G4
+(`gaussian_r4`, `centre_r4`, `sel_wr5`, `vld_wr5`); `DIV_STAGES` 12 → 11;
+`PIPE_STAGES` and total latency **unchanged** at 17/18 cycles. Fmax: 102.16 →
+**102.18 MHz** (+0.02% — the stage-2b path was broken but the Wiener row-partial
+sum-of-squares path at ~10.23 ns was just behind it and is now critical).
+New critical path: `u_ctrl.win_r` Q → `u_wiener.rs2[1]` MULT18X18D → CCU2C carry
+chain → `u_wiener.rs2_r[1]` setup (~10.23 ns). TRELLIS_FF: 1,550 → 1,574 (+24);
+TRELLIS_COMB: 1,890 → 1,887 (−3). All 5 unit benches pass.
+
+The current critical path (~10.23 ns) is `u_ctrl.win_r` Q →
+`u_wiener.rs2[1]` MULT18X18D → CCU2C carry chain → `u_wiener.rs2_r[1]` setup —
+the Wiener row-partial sum-of-squares accumulator. To improve Fmax further,
+pipeline the MULT18X18D → carry-chain path inside the row-partial-sum stage
+(split the squaring and accumulation across two cycles).
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results

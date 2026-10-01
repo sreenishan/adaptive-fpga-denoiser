@@ -11,24 +11,27 @@
 // Register q[0..8]: captures the nine fully sorted-column values.
 // Stage 2a (comb): steps 10-16 — discard extremes + one converge step, 3 deep.
 // Register r[0..8]: captures all nine values after steps 10-16.
-// Stage 2b (comb): steps 17-19 — final convergence, 3 deep.
+// Stage 2b-a (comb): step 17 — CS(4,2), 1 deep.
+// Register w_r[0..8]: captures the step-17 output.
+// Stage 2b-b (comb): steps 18-19 — CS(6,4) then CS(4,2), 2 deep.
 //
-// Latency: 3 clock cycles.  filter_controller adds Stages G2 and G3 to delay
-// gaussian_px and centre_r by two extra cycles so all paths meet at cycle 4
-// from win_flat (PIPE_STAGES = 17, total pipeline latency = 18).
+// Latency: 4 clock cycles.  filter_controller adds Stages G2, G3 and G4 to
+// delay gaussian_px and centre_r by three extra cycles so all paths meet at
+// cycle 5 from win_flat (PIPE_STAGES = 17, total pipeline latency = 18).
 //
-// WHY THIS FOUR-WAY SPLIT
+// WHY THIS FIVE-WAY SPLIT
 // -------------------------
 // Stage 1 cut the original 8-deep network to 5-deep (~20 ns on ECP5), which
 // had become the critical path after the Wiener variance stage was pipelined.
 // The five-comparator Stage 2 (steps 10-19) was split at step 16:
 //   Stage 2a (steps 10-16): 3 comparators deep from q[].
 //   Stage 2b (steps 17-19): 3 comparators deep from r[].
-// The 3-layer column-sort was then the new critical path (~10.25 ns).
-// It is now split after layer 1:
-//   Stage 1a (layer 1): 1 comparator deep from p[] (~3 ns).
-//   Stage 1b (layers 2-3): 2 comparators deep from s1_r[] (~7 ns).
-// Adding one more clock cycle to filter_controller (Stage G3) aligns the paths.
+// The 3-layer column-sort was then the new critical path (~10.25 ns), split
+// after layer 1 (Stage 1a/1b). The new critical path was stage-2b (~10.45 ns),
+// so stage-2b is now split after step 17:
+//   Stage 2b-a (step 17): 1 comparator deep from r[] (~3 ns).
+//   Stage 2b-b (steps 18-19): 2 comparators deep from w_r[] (~7 ns).
+// Adding one more clock cycle to filter_controller (Stage G4) aligns the paths.
 //
 // WHY NO TEMPORARY / NO LATCH
 // ----------------------------
@@ -138,14 +141,29 @@ module median_filter #(
         end
     end
 
-    // ── Stage 2b (comb): steps 17-19 — final convergence ───────────────────
-    // 3 comparators deep from r[]: {17} → {18} → {19}.
-    // Only r[2], r[4], r[6] are read; the others are registered for symmetry.
+    // ── Stage 2b-a (comb): step 17 — CS(4,2), 1 comparator deep ─────────────
+    logic [DEPTH-1:0] wa [0:8];
+    always_comb begin
+        for (int i = 0; i < 9; i++) wa[i] = r[i];
+        {wa[4], wa[2]} = (wa[4] > wa[2]) ? {wa[2], wa[4]} : {wa[4], wa[2]};
+    end
+
+    // ── Stage 2b-a register ───────────────────────────────────────────────────
+    // Breaks r[] Q → 3-comparator stage-2b → comb_r setup (~10.45 ns on ECP5-25k)
+    // into r[] Q → step 17 (~3 ns) → w_r; w_r Q → steps 18-19 (~7 ns) → comb_r.
+    logic [DEPTH-1:0] w_r [0:8];
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            for (int i = 0; i < 9; i++) w_r[i] <= '0;
+        end else if (en) begin
+            for (int i = 0; i < 9; i++) w_r[i] <= wa[i];
+        end
+    end
+
+    // ── Stage 2b-b (comb): steps 18-19 — final convergence (2 deep) ──────────
     logic [DEPTH-1:0] w [0:8];
     always_comb begin
-        for (int i = 0; i < 9; i++) w[i] = r[i];
-        // 17..19: converge on the 5th order statistic
-        {w[4], w[2]} = (w[4] > w[2]) ? {w[2], w[4]} : {w[4], w[2]};
+        for (int i = 0; i < 9; i++) w[i] = w_r[i];
         {w[6], w[4]} = (w[6] > w[4]) ? {w[4], w[6]} : {w[6], w[4]};
         {w[4], w[2]} = (w[4] > w[2]) ? {w[2], w[4]} : {w[4], w[2]};
     end
