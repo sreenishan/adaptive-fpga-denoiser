@@ -99,7 +99,7 @@ module tb_filter_controller;
     int errors;
 
     // Must match DIV_STAGES+7 in filter_controller.sv (W + G1 + G2 + G3 + G4 + C + DIV_STAGES + output).
-    localparam int DIV_STAGES = 11;
+    localparam int DIV_STAGES = 12;
     localparam int LATENCY    = DIV_STAGES + 7;
 
     // Drive one window for one cycle, then wait LATENCY cycles for it to come

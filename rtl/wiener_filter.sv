@@ -57,12 +57,18 @@
 //
 // PIPELINED, NOT ITERATIVE
 // -----------------------
-// Total pipeline latency: STAGES + 8 cycles.
+// Total pipeline latency: STAGES + 9 cycles.
+//
+//   Squaring stage (1 cycle): registers nine individual pixel squares
+//   sq_r[i] = wp[i]^2 (MULT18X18D, ~4 ns from win_r Q) and the three row
+//   pixel sums rsum_r[r].  Breaks win_r Q → MULT → 3-input carry chain →
+//   rs2_r setup (~10.23 ns on ECP5-25k) into win_r Q → MULT → sq_r (~4 ns)
+//   and sq_r Q → 3-input adder → rs2_r setup (~3 ns).
 //
 //   Row-partial-sum stage (1 cycle): registers three row subtotals
-//   rs[r] = wp[r*3]+wp[r*3+1]+wp[r*3+2] and rs2[r] = Σ wp[r*3+c]² before
-//   the final nine-pixel accumulation.  Breaks the win_r Q → 9-input carry-
-//   chain adder tree → s2_pre path (~13.97 ns on ECP5-25k) into two hops.
+//   rs_r[r] (= rsum_r[r], from squaring stage) and
+//   rs2_r[r] = sq_r[r*3]+sq_r[r*3+1]+sq_r[r*3+2] (fast 3-input adder from
+//   registered squares) before the final nine-pixel accumulation.
 //
 //   Pre-stage (1 cycle): sums the three row partial sums (fast 3-input adder)
 //   and registers s_pre, s2_pre, centre pixel and noise_var before the
@@ -125,26 +131,53 @@ module wiener_filter #(
         assign wp[gi] = win_flat[gi*DEPTH +: DEPTH];
     end
 
-    // Row partial sums (combinational from wp[]).
-    // rs[r]  = wp[r*3] + wp[r*3+1] + wp[r*3+2]     (max 3*255=765, fits S_W)
-    // rs2[r] = wp[r*3]² + wp[r*3+1]² + wp[r*3+2]²  (max 3*65025=195075, fits S2_W)
+    // ── Row-pixel sums and squaring stage (comb) ─────────────────────────────
+    // rs[r]  = wp[r*3] + wp[r*3+1] + wp[r*3+2]   (3-input 8-bit adder, ~1 ns)
+    // sq[i]  = wp[i]^2                            (MULT18X18D, ~4 ns from win_r Q)
     logic [S_W-1:0]  rs  [0:2];
-    logic [S2_W-1:0] rs2 [0:2];
+    logic [S2_W-1:0] sq  [0:8];
 
     always_comb begin
-        for (int r = 0; r < 3; r++) begin
-            rs[r]  = S_W'(wp[r*3])  + S_W'(wp[r*3+1])  + S_W'(wp[r*3+2]);
-            rs2[r] = S2_W'(wp[r*3])  * S2_W'(wp[r*3])
-                   + S2_W'(wp[r*3+1])* S2_W'(wp[r*3+1])
-                   + S2_W'(wp[r*3+2])* S2_W'(wp[r*3+2]);
+        for (int r = 0; r < 3; r++)
+            rs[r] = S_W'(wp[r*3]) + S_W'(wp[r*3+1]) + S_W'(wp[r*3+2]);
+        for (int i = 0; i < 9; i++)
+            sq[i] = S2_W'(wp[i]) * S2_W'(wp[i]);
+    end
+
+    // ── Squaring stage register ───────────────────────────────────────────────
+    // Breaks win_r Q → MULT18X18D → 3-input carry chain → rs2_r setup (~10.23 ns
+    // on ECP5-25k) into win_r Q → MULT → sq_r (~4 ns); sq_r Q → 3-input adder
+    // → rs2_r setup (~3 ns).  rs[r] (fast, ~1 ns) is also latched here so all
+    // inputs to the row-partial-sum register arrive from registered sources.
+    // Wiener total latency: STAGES+8 → STAGES+9 cycles.
+    logic [S2_W-1:0]  sq_r   [0:8];   // individual pixel squares, registered
+    logic [S_W-1:0]   rsum_r [0:2];   // row pixel sums, registered alongside
+    logic [DEPTH-1:0] c_sq;
+    logic [NV_W-1:0]  nv_sq;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            for (int i = 0; i < 9; i++) sq_r[i]   <= '0;
+            for (int r = 0; r < 3; r++) rsum_r[r] <= '0;
+            c_sq <= '0; nv_sq <= '0;
+        end else if (en) begin
+            for (int i = 0; i < 9; i++) sq_r[i]   <= sq[i];
+            for (int r = 0; r < 3; r++) rsum_r[r] <= rs[r];
+            c_sq <= wp[4];
+            nv_sq <= noise_var;
         end
     end
 
+    // ── Row-partial sums-of-squares from registered squares (comb) ───────────
+    // rs2[r] = sq_r[r*3] + sq_r[r*3+1] + sq_r[r*3+2]  (~3 ns from sq_r Q)
+    logic [S2_W-1:0] rs2 [0:2];
+    always_comb begin
+        for (int r = 0; r < 3; r++)
+            rs2[r] = sq_r[r*3] + sq_r[r*3+1] + sq_r[r*3+2];
+    end
+
     // ── Row-partial-sum stage register ───────────────────────────────────────
-    // win_r Q → 8×8 MULT18X18D (~4 ns) + 3-input adder (~3 ns) → rs_r setup:
-    // each row fits one cycle.  Leaves only a fast 3-input adder in the
-    // pre-stage instead of the old 9-input tree (~13.97 ns on ECP5-25k).
-    // Wiener total latency: STAGES + 4 → STAGES + 5 cycles.
+    // Inputs are now fast adders/pass-through from registered sq_r[]/rsum_r[].
     logic [S_W-1:0]  rs_r  [0:2];
     logic [S2_W-1:0] rs2_r [0:2];
     logic [DEPTH-1:0] c_rs;
@@ -155,9 +188,9 @@ module wiener_filter #(
             for (int r = 0; r < 3; r++) begin rs_r[r] <= '0; rs2_r[r] <= '0; end
             c_rs <= '0; nv_rs <= '0;
         end else if (en) begin
-            for (int r = 0; r < 3; r++) begin rs_r[r] <= rs[r]; rs2_r[r] <= rs2[r]; end
-            c_rs <= wp[4];
-            nv_rs <= noise_var;
+            for (int r = 0; r < 3; r++) begin rs_r[r] <= rsum_r[r]; rs2_r[r] <= rs2[r]; end
+            c_rs <= c_sq;
+            nv_rs <= nv_sq;
         end
     end
 

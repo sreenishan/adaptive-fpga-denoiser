@@ -17,7 +17,7 @@
 //
 // Latency: 4 clock cycles.  filter_controller adds Stages G2, G3 and G4 to
 // delay gaussian_px and centre_r by three extra cycles so all paths meet at
-// cycle 5 from win_flat (PIPE_STAGES = 17, total pipeline latency = 18).
+// cycle 5 from win_flat (PIPE_STAGES = 18, total pipeline latency = 19).
 //
 // WHY THIS FIVE-WAY SPLIT
 // -------------------------

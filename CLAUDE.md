@@ -349,11 +349,24 @@ New critical path: `u_ctrl.win_r` Q → `u_wiener.rs2[1]` MULT18X18D → CCU2C c
 chain → `u_wiener.rs2_r[1]` setup (~10.23 ns). TRELLIS_FF: 1,550 → 1,574 (+24);
 TRELLIS_COMB: 1,890 → 1,887 (−3). All 5 unit benches pass.
 
-The current critical path (~10.23 ns) is `u_ctrl.win_r` Q →
-`u_wiener.rs2[1]` MULT18X18D → CCU2C carry chain → `u_wiener.rs2_r[1]` setup —
-the Wiener row-partial sum-of-squares accumulator. To improve Fmax further,
-pipeline the MULT18X18D → carry-chain path inside the row-partial-sum stage
-(split the squaring and accumulation across two cycles).
+Done: Wiener squaring stage pipeline (2026-10-01). A squaring-stage register
+inside `wiener_filter` captures nine individual pixel squares `sq_r[i] = wp[i]^2`
+(MULT18X18D, ~4 ns from `win_r` Q) alongside three row pixel sums `rsum_r[r]`
+before the row-partial accumulation. The old path was `win_r` Q → MULT18X18D →
+3-input carry chain → `rs2_r` setup (~10.23 ns); after the register the worst
+sub-path is `sq_r` Q → 3-input adder → `rs2_r` setup (~3 ns). Not an
+approximation. Wiener total latency: STAGES+8 → STAGES+9 = 17 cycles.
+`filter_controller`: `DIV_STAGES` 11 → 12, `wiener_px` at cycle 18 = `comb_d[12]`;
+`PIPE_STAGES` 17 → 18; total latency 18 → 19 cycles. Fmax: 102.18 → **115.86 MHz**
+(+13.4%). New critical path: `u_ctrl.u_median.q[4]` Q → stage-2a (steps 10-16,
+3 comparators deep) → `u_ctrl.u_median.r[4]` setup (~9.40 ns). TRELLIS_FF: 1,574
+→ 1,783 (+209 = sq_r[0..8] + rsum_r[0..2]); TRELLIS_COMB: 1,887 (unchanged).
+All 5 unit benches pass.
+
+The current critical path (~9.40 ns) is `u_ctrl.u_median.q[4]` Q → stage-2a
+(steps 10-16, 3 comparators deep) → `u_ctrl.u_median.r[4]` setup inside
+`median_filter`. To improve Fmax further, pipeline inside the median stage-2a
+comparator network (steps 10-16, 3 deep).
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results

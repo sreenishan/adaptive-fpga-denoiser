@@ -24,8 +24,8 @@ module tb_fpga_denoiser_top;
     parameter int W          = 4;
     parameter int H          = 4;
     parameter int NOISE_VAR  = 100;
-    // Must match fpga_denoiser_top's PIPE_STAGES (filter_controller depth = 1+1+1+1+13=17).
-    localparam int PIPE_STAGES = 17;
+    // Must match fpga_denoiser_top's PIPE_STAGES (filter_controller depth = 1+1+1+1+1+12=18, +output=19).
+    localparam int PIPE_STAGES = 18;
     parameter int DEPTH      = 8;
 
     // ── DUT ────────────────────────────────────────────────────────────────
