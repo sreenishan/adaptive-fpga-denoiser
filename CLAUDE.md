@@ -262,14 +262,26 @@ inside `wiener_filter` captures `ct_r = centre_term` (first MULT18X18D output,
 Wiener total latency: STAGES+3 → STAGES+4 = 12 cycles. `filter_controller`
 drops `wiener_r3` (wiener_px now at cycle 13 → only 2 alignment regs needed).
 `PIPE_STAGES` and total latency **unchanged** at 15/16. Fmax: 56.82 →
-**72.03 MHz** (+27%). New critical path: `u_ctrl.win_r` Q → s2 squaring
-(MULT18X18D + carry chain) → `s2_pre` setup (~13.97 ns) — the nine-pixel
-sum-of-squares in the Wiener pre-stage. TRELLIS_FF: 1,224 → 1,249 (+25);
-TRELLIS_COMB: 1,943 → 1,945 (+2). All 5 unit benches pass.
+72.03 MHz (+27%). All 5 unit benches pass.
 
-The current critical path (~13.97 ns) is `u_ctrl.win_r` Q → Wiener pre-stage
-s2 accumulation (MULT18X18D + carry chain) → `s2_pre` register setup. To
-improve Fmax further, pipeline the s2 accumulation in the Wiener pre-stage.
+Done: Wiener s2 row-partial-sum pipeline (2026-10-01). A row-partial-sum stage
+register inside `wiener_filter` captures `rs_r[r]` and `rs2_r[r]` (= three-
+pixel row sums and row sums-of-squares) before the final three-row accumulation.
+The old path: win_r Q → nine squaring MULTs → 9-input carry-chain adder tree
+→ `s2_pre` setup (~13.97 ns). After the register: one MULT + 3-input adder per
+row (~7 ns); pre-stage sees a fast 3-input adder from registered row partials
+(~3 ns). Not an approximation. Wiener total latency: STAGES+4 → STAGES+5 = 13
+cycles. `filter_controller` drops `wiener_r2` (wiener_px now at cycle 14 → only
+1 alignment reg needed). `PIPE_STAGES` and total latency **unchanged** at 15/16.
+Fmax: 72.03 → **88.45 MHz** (+23%). New critical path: `gain_r` Q →
+`gain_r × ct_r` (MULT18X18D) → carry chain (acc = sext_r<<8 + product + 1152)
+→ `acc_r` setup (~11.63 ns). TRELLIS_FF: 1,249 → 1,349 (+100);
+TRELLIS_COMB: 1,945 → 1,871 (−74). All 5 unit benches pass.
+
+The current critical path (~11.63 ns) is `u_ctrl.u_wiener.gain_r` Q →
+`gain_r × ct_r` (MULT18X18D) → acc carry chain → `acc_r` setup. To improve
+Fmax further, pipeline the output accumulator — register the multiply product
+before adding `sext_r<<8 + 1152`.
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results

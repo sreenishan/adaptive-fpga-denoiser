@@ -137,7 +137,8 @@ nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 | + median comparator pipeline | 49.15 MHz | 1,079 | 2 | 17 |
 | + Wiener variance stage pipeline | 49.36 MHz | 1,181 | 2 | 17 |
 | + median stage-2 pipeline | 56.82 MHz | 1,224 | 2 | 17 |
-| + Wiener gain-multiply pipeline | **72.03 MHz** | **1,249** | **2** | 17 |
+| + Wiener gain-multiply pipeline | 72.03 MHz | 1,249 | 2 | 17 |
+| + Wiener s2 row-partial pipeline | **88.45 MHz** | **1,349** | **2** | 17 |
 
 The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
 input path) and an output-accumulator register plus reciprocal multiply (breaks
@@ -217,19 +218,35 @@ approximation — the arithmetic is identical; only when it runs changes.
 Wiener total latency: STAGES+3 → STAGES+4 = 12 cycles.  `filter_controller`
 drops `wiener_r3` (only 2 alignment registers needed now, since `wiener_px`
 arrives one cycle later); `PIPE_STAGES` and total latency are **unchanged** at
-15/16.  Fmax: 56.82 → **72.03 MHz** (+27%).  The Wiener gain-multiply path is
+15/16.  Fmax: 56.82 → 72.03 MHz (+27%).  The Wiener gain-multiply path is
 gone; nextpnr now reports `u_ctrl.win_r` Q → `s2` squaring accumulation
 (MULT18X18D + carry chain) → `s2_pre` register setup (~13.97 ns) — the nine-
 pixel sum-of-squares in the pre-stage.  TRELLIS_FF: 1,224 → 1,249 (+25 = ct_r
 + gain_r + sext_r registers); TRELLIS_COMB: 1,943 → 1,945 (+2, routing).
 
+The twelfth row pipelines the Wiener s2 accumulation: a row-partial-sum stage
+register inside `wiener_filter` captures three row partial sums `rs_r[r]` and
+`rs2_r[r]` (= `Σ wp[r*3+c]` and `Σ wp[r*3+c]²` for c=0..2) before the final
+three-row accumulation.  The critical path was win_r Q → nine squaring MULTs
+→ 9-input carry-chain adder tree → `s2_pre` setup (~13.97 ns).  After the
+register, each row uses one 8×8 MULT18X18D + a 3-input adder (~7 ns); the
+pre-stage sees only a fast 3-input adder from registered row partials (~3 ns).
+Not an approximation — arithmetic is identical.  Wiener total latency:
+STAGES+4 → STAGES+5 = 13 cycles.  `filter_controller` drops `wiener_r2`
+(only 1 alignment register needed now); `PIPE_STAGES` and total latency
+**unchanged** at 15/16.  Fmax: 72.03 → **88.45 MHz** (+23%).  New critical
+path: `gain_r` Q → `gain_r × ct_r` (MULT18X18D) → carry chain (acc
+accumulation) → `acc_r` setup (~11.63 ns).  TRELLIS_FF: 1,249 → 1,349 (+100
+= rs_r[0..2] + rs2_r[0..2] + c_rs + nv_rs); TRELLIS_COMB: 1,945 → 1,871
+(−74, smaller adder tree in pre-stage).
+
 **This is an ECP5 number** — it is a like-for-like comparison on one part, not a
 claim about any target hardware.
 
-The current critical path (~13.97 ns) is `u_ctrl.win_r` Q → `s2` squaring
-accumulation (nine-pixel sum-of-squares, MULT18X18D + carry chain) → `s2_pre`
-register setup.  To improve further, pipeline the s2 accumulation in the
-Wiener pre-stage.
+The current critical path (~11.63 ns) is `u_ctrl.u_wiener.gain_r` Q →
+`gain_r × ct_r` (MULT18X18D) → carry chain (acc = sext_r<<8 + product +
+1152) → `acc_r` setup.  To improve further, pipeline the output accumulator —
+register the multiply product before the addition.
 
 **The reciprocal multiply uses 2 extra MULT18X18D blocks** (15 → 17 = 60% of
 28) and costs **2 extra flip-flops** in Wiener. The generic LUT count is higher
@@ -253,8 +270,8 @@ nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
-| TRELLIS_COMB (LUT4) | 1,945 | 24,288 | 8% |
-| TRELLIS_FF | 1,249 | 24,288 | 5% |
+| TRELLIS_COMB (LUT4) | 1,871 | 24,288 | 8% |
+| TRELLIS_FF | 1,349 | 24,288 | 6% |
 | DP16KD (BRAM18) | 2 | 56 | 3% |
 | MULT18X18D (DSP) | 17 | 28 | 60% |
 
@@ -275,21 +292,21 @@ From nextpnr-ecp5 0.9-2, `--freq 100 --lpf-allow-unconstrained`, seed 1.
 | Item | Value |
 |---|---|
 | Clock target | 100 MHz |
-| Achieved Fmax | 72.03 MHz |
+| Achieved Fmax | 88.45 MHz |
 | Timing closure | FAIL |
-| Critical path | `u_ctrl.win_r` Q → s2 squaring (MULT18X18D + carry chain) → `s2_pre` setup (~13.97 ns) |
+| Critical path | `gain_r` Q → `gain_r × ct_r` (MULT18X18D) → carry chain → `acc_r` setup (~11.63 ns) |
 
 The design does not close timing at 100 MHz.  The `--lpf-allow-unconstrained`
 flag means the clock enters through a general I/O cell; a dedicated clock pin
 (LOCATE COMP "clk" SITE "...") would reduce I/O overhead.
 
-The critical path is now in the Wiener pre-stage: `win_r` Q feeds the nine-
-pixel sum-of-squares accumulation (`s2 = Σx²`), which uses a MULT18X18D and a
-carry-chain adder tree before registering into `s2_pre` (~13.97 ns total).
+The critical path is now in the Wiener output accumulator: `gain_r` Q →
+`gain_r × ct_r` (MULT18X18D for the gain × centre_term product) → carry chain
+(adding `sext_r << 8` and the bias 1152) → `acc_r` setup (~11.63 ns total).
 
 **Next steps to improve Fmax** (in order of likely impact):
-1. Pipeline the s2 accumulation in the Wiener pre-stage — split the nine-pixel
-   sum-of-squares into a partial-sum register before the final adder.
+1. Pipeline the output accumulator — register the `gain_r × ct_r` product
+   before adding `sext_r<<8 + 1152`.
 2. Use a dedicated clock pin via a LOCATE constraint in `ecp5_25k.lpf`.
 3. Target a 45k or 85k ECP5 with a higher speed grade.
 

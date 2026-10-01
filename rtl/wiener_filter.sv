@@ -57,11 +57,16 @@
 //
 // PIPELINED, NOT ITERATIVE
 // -----------------------
-// Total pipeline latency: STAGES + 4 cycles.
+// Total pipeline latency: STAGES + 5 cycles.
 //
-//   Pre-stage (1 cycle): registers the window sums (s, s2), centre pixel and
-//   noise_var before the variance computation. Breaks the long combinational
-//   path from the nine-pixel sum accumulators into a shorter first hop.
+//   Row-partial-sum stage (1 cycle): registers three row subtotals
+//   rs[r] = wp[r*3]+wp[r*3+1]+wp[r*3+2] and rs2[r] = Σ wp[r*3+c]² before
+//   the final nine-pixel accumulation.  Breaks the win_r Q → 9-input carry-
+//   chain adder tree → s2_pre path (~13.97 ns on ECP5-25k) into two hops.
+//
+//   Pre-stage (1 cycle): sums the three row partial sums (fast 3-input adder)
+//   and registers s_pre, s2_pre, centre pixel and noise_var before the
+//   variance computation.
 //
 //   Variance stage (1 cycle): registers num_v (= max(0, v81-81*NV)) and den_v
 //   (= max(v81, 81*NV)) after the MULT18X18D that computes s_pre*s_pre.
@@ -104,12 +109,9 @@ module wiener_filter #(
     input  logic [NV_W-1:0]   noise_var,     // squared grey levels, per frame
     output logic [DEPTH-1:0]  wiener_out
 );
-    // ── Window sums (combinational) ────────────────────────────────────────
+    // ── Window sums ──────────────────────────────────────────────────────────
     localparam int S_W  = DEPTH + 4;      // 12b: max 9*255 = 2295
     localparam int S2_W = 2*DEPTH + 4;    // 20b: max 9*255^2 = 585225
-
-    logic [S_W-1:0]  s;        // SUM x
-    logic [S2_W-1:0] s2;       // SUM x^2
 
     // Extract pixels into a local unpacked array to avoid 2D packed port indexing.
     logic [DEPTH-1:0] wp [0:8];
@@ -117,19 +119,45 @@ module wiener_filter #(
         assign wp[gi] = win_flat[gi*DEPTH +: DEPTH];
     end
 
+    // Row partial sums (combinational from wp[]).
+    // rs[r]  = wp[r*3] + wp[r*3+1] + wp[r*3+2]     (max 3*255=765, fits S_W)
+    // rs2[r] = wp[r*3]² + wp[r*3+1]² + wp[r*3+2]²  (max 3*65025=195075, fits S2_W)
+    logic [S_W-1:0]  rs  [0:2];
+    logic [S2_W-1:0] rs2 [0:2];
+
     always_comb begin
-        s  = '0;
-        s2 = '0;
-        for (int i = 0; i < 9; i++) begin
-            s  = s  + S_W'(wp[i]);
-            s2 = s2 + S2_W'(wp[i]) * S2_W'(wp[i]);
+        for (int r = 0; r < 3; r++) begin
+            rs[r]  = S_W'(wp[r*3])  + S_W'(wp[r*3+1])  + S_W'(wp[r*3+2]);
+            rs2[r] = S2_W'(wp[r*3])  * S2_W'(wp[r*3])
+                   + S2_W'(wp[r*3+1])* S2_W'(wp[r*3+1])
+                   + S2_W'(wp[r*3+2])* S2_W'(wp[r*3+2]);
         end
     end
 
-    // ── Pre-stage register — breaks the long path from window inputs ────────
-    // Without this, the combinational chain s/s2 → v81 → den_v → step-0 →
-    // rem_r[1] was ~25 ns on ECP5-25k, and the nine-pixel accumulations alone
-    // consumed ~10 ns before the two multiplies.
+    // ── Row-partial-sum stage register ───────────────────────────────────────
+    // win_r Q → 8×8 MULT18X18D (~4 ns) + 3-input adder (~3 ns) → rs_r setup:
+    // each row fits one cycle.  Leaves only a fast 3-input adder in the
+    // pre-stage instead of the old 9-input tree (~13.97 ns on ECP5-25k).
+    // Wiener total latency: STAGES + 4 → STAGES + 5 cycles.
+    logic [S_W-1:0]  rs_r  [0:2];
+    logic [S2_W-1:0] rs2_r [0:2];
+    logic [DEPTH-1:0] c_rs;
+    logic [NV_W-1:0]  nv_rs;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            for (int r = 0; r < 3; r++) begin rs_r[r] <= '0; rs2_r[r] <= '0; end
+            c_rs <= '0; nv_rs <= '0;
+        end else if (en) begin
+            for (int r = 0; r < 3; r++) begin rs_r[r] <= rs[r]; rs2_r[r] <= rs2[r]; end
+            c_rs <= wp[4];
+            nv_rs <= noise_var;
+        end
+    end
+
+    // ── Pre-stage register — sums three row partial sums ────────────────────
+    // rs_r Q → 3-input adder (~3 ns) → s_pre/s2_pre setup: fast from registered
+    // inputs.  c_rs and nv_rs ride along.
     logic [S_W-1:0]   s_pre;
     logic [S2_W-1:0]  s2_pre;
     logic [DEPTH-1:0] c_pre;
@@ -140,10 +168,10 @@ module wiener_filter #(
             s_pre  <= '0;  s2_pre <= '0;
             c_pre  <= '0;  nv_pre <= '0;
         end else if (en) begin
-            s_pre  <= s;
-            s2_pre <= s2;
-            c_pre  <= wp[4];
-            nv_pre <= noise_var;
+            s_pre  <= rs_r[0] + rs_r[1] + rs_r[2];
+            s2_pre <= rs2_r[0] + rs2_r[1] + rs2_r[2];
+            c_pre  <= c_rs;
+            nv_pre <= nv_rs;
         end
     end
 
