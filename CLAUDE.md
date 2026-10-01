@@ -287,17 +287,29 @@ register, `acc` is a fast 3-input carry-chain addition (~4 ns). Not an
 approximation. Wiener total latency: STAGES+5 → STAGES+6 = 14 cycles.
 `filter_controller` drops `wiener_r` entirely — `wiener_px` now arrives at
 cycle 15 = `comb_d[11]`, so no alignment registers remain; `PIPE_STAGES` and
-total latency **unchanged** at 15/16. Fmax: 88.45 → **88.58 MHz** (+0.1% —
-the new critical path, `acc_r` Q → `recip_prod` MULT18X18D → carry chain →
-`pixel_out` setup (~11.29 ns), was already adjacent to the old one).
-TRELLIS_FF: 1,349 → 1,375 (+26 = prod_r + sext_r2); TRELLIS_COMB: 1,871 →
-1,865 (−6). All 5 unit benches pass.
+total latency unchanged at 15/16. Fmax: 88.45 → 88.58 MHz (+0.1%).
+TRELLIS_FF: 1,349 → 1,375 (+26); TRELLIS_COMB: 1,871 → 1,865 (−6).
+All 5 unit benches pass.
 
-The current critical path (~11.29 ns) is `u_ctrl.u_wiener.acc_r` Q →
-`recip_prod` MULT18X18D (reciprocal multiply, `acc × 233017 >> 29`) → carry
-chain → `pixel_out` setup. To improve Fmax further, pipeline between
-`recip_prod` and the output clamp — register the product before the shift and
-comparison.
+Done: Wiener reciprocal-product pipeline (2026-10-01). A reciprocal-product
+stage register inside `wiener_filter` captures `recip_r = acc_r × RECIP` (the
+43-bit two-MULT18X18D intermediate, ~4 ns from `acc_r` Q) before the
+`quot = recip_r >> RECIP_SHR` shift and 8-bit clamp. The old path was `acc_r`
+Q → MULT → carry chain → `pixel_out` setup (~11.29 ns); after the register,
+only a shift and comparison remain. Not an approximation. Wiener total latency:
+STAGES+6 → STAGES+7 = 15 cycles. `filter_controller`: `DIV_STAGES` 11 → 12,
+`wiener_px` at cycle 16 = `comb_d[12]`; `PIPE_STAGES` 15 → 16; total latency
+16 → 17 cycles. Fmax: 88.58 → **93.76 MHz** (+5.8%). New critical path:
+`p1_r` Q → `v81 = p1_r − p2_r` (subtraction) → `den_v` carry chain → `nxt_0`
+→ `rem_r[1]` setup (~10.41 ns) — variance stage into restoring-divider step 0.
+TRELLIS_FF: 1,375 → 1,399 (+24 = recip_r); TRELLIS_COMB: 1,865 → 1,863 (−2).
+All 5 unit benches pass.
+
+The current critical path (~10.41 ns) is `u_ctrl.u_wiener.p1_r` Q →
+`v81 = p1_r − p2_r` → `den_v` max comparison (carry chain) → restoring-
+divider step 0 (`nxt_0`) → `rem_r[1]` setup. To improve Fmax further,
+register `den_v` (or `nxt_0` inputs) to break the variance-stage →
+divider-step-0 path.
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results

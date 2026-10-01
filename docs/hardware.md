@@ -43,8 +43,8 @@ module never grew.
 in the generator that cycle, which trails the input pixel by IMG_WIDTH+1. Change
 them between frames.
 
-**Latency and flush.** The filter_controller pipeline is `PIPE_STAGES` = 15 deep
-(1 win-input + 1 gaussian-row/G1 + 1 median-align/G2 + 1 comb-pre + 11 delay-chain/Wiener stages), so
+**Latency and flush.** The filter_controller pipeline is `PIPE_STAGES` = 16 deep
+(1 win-input + 1 gaussian-row/G1 + 1 median-align/G2 + 1 comb-pre + 12 delay-chain/Wiener stages), so
 the first `m_valid` appears `LATENCY` = IMG_WIDTH+3+PIPE_STAGES advances after
 the first pixel, and the drain is `FLUSH_CYCLES` = IMG_WIDTH+2+PIPE_STAGES.
 Both are localparams in `rtl/fpga_denoiser_top.sv`; read them rather than
@@ -139,7 +139,8 @@ nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 | + median stage-2 pipeline | 56.82 MHz | 1,224 | 2 | 17 |
 | + Wiener gain-multiply pipeline | 72.03 MHz | 1,249 | 2 | 17 |
 | + Wiener s2 row-partial pipeline | 88.45 MHz | 1,349 | 2 | 17 |
-| + Wiener gain-product pipeline | **88.58 MHz** | **1,375** | **2** | 17 |
+| + Wiener gain-product pipeline | 88.58 MHz | 1,375 | 2 | 17 |
+| + Wiener reciprocal-product pipeline | **93.76 MHz** | **1,399** | **2** | 17 |
 
 The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
 input path) and an output-accumulator register plus reciprocal multiply (breaks
@@ -251,19 +252,36 @@ and the path to `acc_r` is short (~4 ns).  Not an approximation — arithmetic
 is identical.  Wiener total latency: STAGES+5 → STAGES+6 = 14 cycles.
 `filter_controller` drops `wiener_r` entirely — `wiener_px` now arrives at
 cycle 15 = `comb_d[11]`, so no alignment register is needed; `PIPE_STAGES` and
-total latency **unchanged** at 15/16.  Fmax: 88.45 → **88.58 MHz** (+0.1% —
-the new critical path, `acc_r` Q → `recip_prod` MULT18X18D → carry chain →
+total latency unchanged at 15/16.  Fmax: 88.45 → 88.58 MHz (+0.1% — the new
+critical path, `acc_r` Q → `recip_prod` MULT18X18D → carry chain →
 `pixel_out` setup (~11.29 ns), was already adjacent to the old one).
 TRELLIS_FF: 1,349 → 1,375 (+26 = prod_r + sext_r2); TRELLIS_COMB: 1,871 →
 1,865 (−6, simpler acc).
 
+The fourteenth row pipelines the Wiener reciprocal multiply: a reciprocal-
+product stage register inside `wiener_filter` captures `recip_r = acc_r ×
+RECIP` (the 43-bit intermediate, two MULT18X18D, ~4 ns from `acc_r` Q) before
+the right-shift and 8-bit clamp (`quot = recip_r >> RECIP_SHR`).  The old
+path was `acc_r` Q → `recip_prod` MULT18X18D → carry chain → `pixel_out`
+setup (~11.29 ns); after the register, only a shift and comparison remain
+(~3 ns).  Not an approximation — arithmetic is identical.  Wiener total
+latency: STAGES+6 → STAGES+7 = 15 cycles.  `filter_controller`: `DIV_STAGES`
+11 → 12, `wiener_px` now arrives at cycle 16 = `comb_d[12]` (no alignment
+register needed); `PIPE_STAGES` 15 → 16; total latency 16 → 17 cycles.
+Fmax: 88.58 → **93.76 MHz** (+5.8%).  New critical path: `p1_r` Q →
+`v81 = p1_r − p2_r` (subtraction) → `den_v` (max comparison, 24-bit carry
+chain) → `nxt_0` LUT → `rem_r[1]` setup (~10.41 ns) — the variance stage
+into restoring-divider step 0.  TRELLIS_FF: 1,375 → 1,399 (+24 = recip_r);
+TRELLIS_COMB: 1,865 → 1,863 (−2).
+
 **This is an ECP5 number** — it is a like-for-like comparison on one part, not a
 claim about any target hardware.
 
-The current critical path (~11.29 ns) is `u_ctrl.u_wiener.acc_r` Q →
-`recip_prod` MULT18X18D (reciprocal multiply for `acc / 2304`) → carry chain
-→ `pixel_out` setup.  To improve further, pipeline between `recip_prod` and
-the output clamp — register the product before the shift and comparison.
+The current critical path (~10.41 ns) is `u_ctrl.u_wiener.p1_r` Q →
+`v81 = p1_r − p2_r` (24-bit subtraction) → `den_v` max comparison (carry
+chain) → restoring-divider step 0 (`nxt_0`) → `rem_r[1]` setup.  To improve
+further, register `den_v` (or the first `rem_r`/`nxt_0` inputs) to break the
+variance-stage → divider-step-0 path.
 
 **The reciprocal multiply uses 2 extra MULT18X18D blocks** (15 → 17 = 60% of
 28) and costs **2 extra flip-flops** in Wiener. The generic LUT count is higher
@@ -287,8 +305,8 @@ nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
-| TRELLIS_COMB (LUT4) | 1,865 | 24,288 | 8% |
-| TRELLIS_FF | 1,375 | 24,288 | 6% |
+| TRELLIS_COMB (LUT4) | 1,863 | 24,288 | 8% |
+| TRELLIS_FF | 1,399 | 24,288 | 6% |
 | DP16KD (BRAM18) | 2 | 56 | 3% |
 | MULT18X18D (DSP) | 17 | 28 | 60% |
 

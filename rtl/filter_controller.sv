@@ -50,7 +50,7 @@ module filter_controller #(
     // (routing + LUT mux logic, ~3.5 ns) out of the critical path so the new
     // critical path starts from win_r's Q rather than window_gen's counter FF.
     localparam int WIENER_STAGES = 8;   // restoring-division stages (wiener_filter param)
-    localparam int DIV_STAGES    = 11;  // wiener_filter latency (STAGES+6); also delay-chain depth
+    localparam int DIV_STAGES    = 12;  // wiener_filter latency (STAGES+7); also delay-chain depth
 
     logic [3*3*DEPTH-1:0] win_r;
     logic [1:0]           sel_wr;
@@ -82,11 +82,11 @@ module filter_controller #(
         u_gaussian (.clk(clk), .rst_n(rst_n), .en(en),
                     .win_flat(win_r), .gaussian_out(gaussian_px));
 
-    // wiener_filter latency: STAGES(8) + row-partial(1) + pre-stage(1) + variance-stage(1) + gain-multiply(1) + gain-product(1) + output-acc(1) = 14.
+    // wiener_filter latency: STAGES(8) + row-partial(1) + pre-stage(1) + variance-stage(1) + gain-multiply(1) + gain-product(1) + output-acc(1) + recip-product(1) = 15.
     // win_r delays the window by 1 cycle (cycle 1 from win_flat).
-    // wiener_px arrives at cycle 15 from win_flat.
-    // The comb path: W(1) + G1(1) + G2(1) + C(1) + chain(11) = comb_d[11] at cycle 15.
-    // wiener_px (15) = comb_d[11] (15) — no alignment register needed.  ✓
+    // wiener_px arrives at cycle 16 from win_flat.
+    // The comb path: W(1) + G1(1) + G2(1) + C(1) + chain(12) = comb_d[12] at cycle 16.
+    // wiener_px (16) = comb_d[12] (16) — no alignment register needed.  ✓
     // Output register adds one more — total latency = DIV_STAGES + 5.
     wiener_filter  #(.DEPTH(DEPTH), .NV_W(NV_W), .STAGES(WIENER_STAGES))
         u_wiener  (.clk(clk), .rst_n(rst_n), .en(en),
@@ -194,8 +194,8 @@ module filter_controller #(
         end
     end
 
-    // wiener_px arrives at cycle 15 from win_flat (win_r at cycle 1 + STAGES+6 = 14 cycles).
-    // comb_d[11] also arrives at cycle 15: W(1)+G1(1)+G2(1)+C(1)+chain(11) = 15.
+    // wiener_px arrives at cycle 16 from win_flat (win_r at cycle 1 + STAGES+7 = 15 cycles).
+    // comb_d[12] also arrives at cycle 16: W(1)+G1(1)+G2(1)+C(1)+chain(12) = 16.
     // They are in phase — no alignment register needed.
     always_comb begin
         mux_out = (sel_d[DIV_STAGES] == 2'b11) ? wiener_px : comb_d[DIV_STAGES];

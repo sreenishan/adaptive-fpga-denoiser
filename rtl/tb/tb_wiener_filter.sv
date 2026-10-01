@@ -48,11 +48,12 @@ module tb_wiener_filter;
     localparam int NV_W = 16;
     logic [NV_W-1:0] noise_var;
 
-    // The pipeline has seven stages: row-partial-sum, pre-stage, variance-stage,
-    // WIENER_STAGES restoring steps, gain-multiply, gain-product, and output-accumulator.
-    // Total latency = WIENER_STAGES+6.
+    // The pipeline has eight stages: row-partial-sum, pre-stage, variance-stage,
+    // WIENER_STAGES restoring steps, gain-multiply, gain-product, output-accumulator,
+    // and reciprocal-product.
+    // Total latency = WIENER_STAGES+7.
     localparam int WIENER_STAGES = 8;          // STAGES parameter passed to DUT
-    localparam int LATENCY       = WIENER_STAGES + 6;  // 14: total cycles to wait
+    localparam int LATENCY       = WIENER_STAGES + 7;  // 15: total cycles to wait
 
     logic clk = 1'b0;
     logic rst_n;

@@ -57,7 +57,7 @@
 //
 // PIPELINED, NOT ITERATIVE
 // -----------------------
-// Total pipeline latency: STAGES + 6 cycles.
+// Total pipeline latency: STAGES + 7 cycles.
 //
 //   Row-partial-sum stage (1 cycle): registers three row subtotals
 //   rs[r] = wp[r*3]+wp[r*3+1]+wp[r*3+2] and rs2[r] = Σ wp[r*3+c]² before
@@ -409,11 +409,27 @@ module wiener_filter #(
     // SV truncates a * b to the width of the LHS assignment, so 43 bits is
     // wide enough and nothing is lost.
     logic [42:0] recip_prod;
-    logic [A_W-1:0] quot;
 
     always_comb begin
         recip_prod = 43'(acc_r) * 43'(RECIP);
-        quot       = A_W'(recip_prod >> RECIP_SHR);
+    end
+
+    // ── Reciprocal-product stage register ─────────────────────────────────────
+    // acc_r Q → recip_prod MULT18X18D (~4 ns) + carry chain through wiener_out
+    // was ~11.29 ns.  Registering recip_prod here leaves only a fast right-shift
+    // and 8-bit comparison in the output stage (~3 ns).
+    // Not an approximation — arithmetic is identical.
+    // Wiener total latency: STAGES + 6 → STAGES + 7 cycles.
+    logic [42:0] recip_r;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) recip_r <= '0;
+        else if (en) recip_r <= recip_prod;
+    end
+
+    logic [A_W-1:0] quot;
+    always_comb begin
+        quot = A_W'(recip_r >> RECIP_SHR);
     end
 
     assign wiener_out = (quot > A_W'(255)) ? '1 : DEPTH'(quot);
