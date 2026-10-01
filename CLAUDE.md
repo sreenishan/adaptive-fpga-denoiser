@@ -247,15 +247,29 @@ stage 2a (steps 10-16, 3 deep) → register r[0..8] → stage 2b (steps 17-19,
 1 → 2 cycles. `filter_controller` adds Stage G2 (new `gaussian_r2`, `centre_r2`,
 `sel_wr3`, `vld_wr3`) to delay gaussian/bypass by one cycle so all comb paths
 align at cycle 3 from `win_flat`. `PIPE_STAGES`: 14 → 15; total latency: 15 → 16
-cycles; `wiener_r3` added. Fmax: 49.36 → **56.82 MHz** (+15%). The median
-carry chain is gone from the critical path; nextpnr now reports
+cycles; `wiener_r3` added. Fmax: 49.36 → 56.82 MHz (+15%). The median
+carry chain is gone from the critical path; nextpnr reports
 `u_ctrl.u_wiener.c_r[8]` Q → MULT18X18D → second MULT → carry chain (~17.6 ns).
 TRELLIS_FF: 1,181 → 1,224 (+43); TRELLIS_COMB: 1,963 → 1,943 (−20).
 All 5 unit benches pass.
 
-The current critical path (~17.6 ns) is `u_ctrl.u_wiener.c_r[8]` Q → Wiener
-gain-multiply chain (two MULT18X18D stages → carry chain). To improve Fmax
-further, pipeline between the two MULT18X18D stages in the Wiener gain path.
+Done: Wiener gain-multiply pipeline (2026-10-01). A gain-multiply stage register
+inside `wiener_filter` captures `ct_r = centre_term` (first MULT18X18D output,
+~8 ns from `c_r[STAGES]` Q) alongside `gain_r` and `sext_r` before the
+`gain × ct_r` multiply (second MULT18X18D). Breaks the two-MULT cascade
+(`c_r[8]` Q → first MULT → second MULT → `acc_r` setup, ~17.6 ns) into two
+~8 ns hops. Not an approximation — identical arithmetic, only timing changes.
+Wiener total latency: STAGES+3 → STAGES+4 = 12 cycles. `filter_controller`
+drops `wiener_r3` (wiener_px now at cycle 13 → only 2 alignment regs needed).
+`PIPE_STAGES` and total latency **unchanged** at 15/16. Fmax: 56.82 →
+**72.03 MHz** (+27%). New critical path: `u_ctrl.win_r` Q → s2 squaring
+(MULT18X18D + carry chain) → `s2_pre` setup (~13.97 ns) — the nine-pixel
+sum-of-squares in the Wiener pre-stage. TRELLIS_FF: 1,224 → 1,249 (+25);
+TRELLIS_COMB: 1,943 → 1,945 (+2). All 5 unit benches pass.
+
+The current critical path (~13.97 ns) is `u_ctrl.win_r` Q → Wiener pre-stage
+s2 accumulation (MULT18X18D + carry chain) → `s2_pre` register setup. To
+improve Fmax further, pipeline the s2 accumulation in the Wiener pre-stage.
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results

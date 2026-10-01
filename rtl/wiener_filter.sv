@@ -57,7 +57,7 @@
 //
 // PIPELINED, NOT ITERATIVE
 // -----------------------
-// Total pipeline latency: STAGES + 3 cycles.
+// Total pipeline latency: STAGES + 4 cycles.
 //
 //   Pre-stage (1 cycle): registers the window sums (s, s2), centre pixel and
 //   noise_var before the variance computation. Breaks the long combinational
@@ -73,10 +73,15 @@
 //   s and centre ride alongside so the output arithmetic has them when the
 //   quotient emerges.
 //
+//   Gain-multiply stage (1 cycle): registers centre_term (= c_r[STAGES]*9 - s)
+//   alongside gain_ext and s_ext before the gain × centre_term multiply.
+//   Breaks the two-MULT cascade (c_r[STAGES] → first MULT → second MULT →
+//   acc_r setup, ~17.6 ns on ECP5-25k) into two separate ~8 ns hops.
+//   Not an approximation — the result is identical.
+//
 //   Output-accumulator stage (1 cycle): registers `acc` before the final
-//   divide. Breaks the path from c_r[STAGES] through the MULT18X18D (gain ×
-//   centre_term), the accumulation and the division to the output register.
-//   Previously this path was ~49 ns on ECP5-25k.
+//   divide. Breaks the path from ct_r through the second MULT18X18D (gain ×
+//   centre_term) and the accumulation to the output register.
 //
 //   The final divide is (acc_r * RECIP) >> RECIP_SHR, an exact reciprocal
 //   multiply that replaces the `acc / 2304` carry-chain division: on ECP5 it
@@ -298,8 +303,7 @@ module wiener_filter #(
     logic signed [A_W-1:0] s_ext;         // sum, zero-extended
     logic signed [A_W-1:0] centre_ext;    // centre pixel, zero-extended
     logic signed [A_W-1:0] gain_ext;      // Q8 gain, zero-extended
-    logic signed [A_W-1:0] centre_term;   // 9*centre - s
-    logic signed [A_W-1:0] acc;           // biased dividend
+    logic signed [A_W-1:0] centre_term;   // 9*centre - s (first MULT18X18D output)
 
     // The delayed copies, so the sum and centre belong to the same pixel as the
     // quotient that just came out of the pipeline.
@@ -307,18 +311,34 @@ module wiener_filter #(
     assign centre_ext = A_W'({{(A_W-DEPTH){1'b0}}, c_r[STAGES]});
     assign gain_ext   = A_W'({{(A_W-8){1'b0}}, gain_q8});
 
-    always_comb begin
-        centre_term = (centre_ext * A_W'(9)) - s_ext;
-        acc = (s_ext <<< 8)
-            + (gain_ext * centre_term)
-            + A_W'(1152);                 // 9 << 7, round half up
+    assign centre_term = (centre_ext * A_W'(9)) - s_ext;
+
+    // ── Gain-multiply stage register ──────────────────────────────────────────
+    // centre_term = c_r[STAGES] × 9 − s uses one MULT18X18D (~8 ns from
+    // c_r[STAGES] Q).  Without this register, gain × centre_term (second
+    // MULT18X18D) was chained directly, giving ~17.6 ns from c_r[8] Q to
+    // acc_r setup.  Registering here splits that into two ~8 ns hops.
+    // Not an approximation — registers only move when arithmetic runs, not what
+    // it produces.  Wiener total latency: STAGES + 3 → STAGES + 4 cycles.
+    logic signed [A_W-1:0] ct_r;     // centre_term registered
+    logic signed [A_W-1:0] gain_r;   // gain_ext registered
+    logic signed [A_W-1:0] sext_r;   // s_ext registered
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin ct_r <= '0; gain_r <= '0; sext_r <= '0; end
+        else if (en)  begin ct_r <= centre_term; gain_r <= gain_ext; sext_r <= s_ext; end
     end
 
-    // ── Output-accumulator stage register — breaks the path from c_r[STAGES] ─
-    // Without this, the combinational path from c_r[STAGES] through the DSP
-    // multiply (gain × centre_term) and the accumulation into the final divide
-    // was ~49 ns on ECP5-25k. Registering acc here isolates the divide in its
-    // own stage, where the reciprocal multiply (below) is fast.
+    // Second-stage accumulator: inputs now arrive from ct_r/gain_r/sext_r registers.
+    logic signed [A_W-1:0] acc;
+    always_comb begin
+        acc = (sext_r <<< 8)
+            + (gain_r * ct_r)
+            + A_W'(1152);               // 9 << 7, round half up
+    end
+
+    // ── Output-accumulator stage register — breaks the path from ct_r ────────
+    // Registering acc here isolates the reciprocal divide in its own stage.
     //
     // acc is clamped to 0 on the way in: a negative dividend produces quot=0
     // regardless, and the clamp avoids carrying a signed value into the

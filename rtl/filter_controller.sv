@@ -21,7 +21,7 @@
 //               to cycle 3 so all comb paths arrive together
 //   Stage C   — comb pre-register: comb_px/sel_wr3/vld_wr3 → comb_r/sel_r/vld_r
 //   Stages 1..DIV_STAGES — delay chain aligning comb/sel/vld with the Wiener path
-//   wiener_r / wiener_r2 / wiener_r3 — three extra registers on the Wiener output
+//   wiener_r / wiener_r2 — two extra registers on the Wiener output
 //   Output    — mux then pixel_out / valid_out register
 
 `default_nettype none
@@ -50,7 +50,7 @@ module filter_controller #(
     // (routing + LUT mux logic, ~3.5 ns) out of the critical path so the new
     // critical path starts from win_r's Q rather than window_gen's counter FF.
     localparam int WIENER_STAGES = 8;   // restoring-division stages (wiener_filter param)
-    localparam int DIV_STAGES    = 11;  // wiener_filter latency (STAGES+3); also delay-chain depth
+    localparam int DIV_STAGES    = 11;  // wiener_filter latency (STAGES+4); also delay-chain depth
 
     logic [3*3*DEPTH-1:0] win_r;
     logic [1:0]           sel_wr;
@@ -82,9 +82,9 @@ module filter_controller #(
         u_gaussian (.clk(clk), .rst_n(rst_n), .en(en),
                     .win_flat(win_r), .gaussian_out(gaussian_px));
 
-    // wiener_filter latency: STAGES(8) + pre-stage(1) + variance-stage(1) + output-acc(1) = 11.
+    // wiener_filter latency: STAGES(8) + pre-stage(1) + variance-stage(1) + gain-multiply(1) + output-acc(1) = 12.
     // win_r delays the window by 1 cycle (cycle 1 from win_flat).
-    // wiener_px arrives at cycle 12 from win_flat.
+    // wiener_px arrives at cycle 13 from win_flat.
     // The comb path: W(1) + G1(1) + G2(1) + C(1) + chain(11) = comb_d[11] at cycle 15.
     // wiener_r (13) + wiener_r2 (14) + wiener_r3 (15) match that.  ✓
     // Output register adds one more — total latency = DIV_STAGES + 5.
@@ -194,21 +194,21 @@ module filter_controller #(
         end
     end
 
-    // wiener_r/wiener_r2/wiener_r3 align the Wiener output with comb_d[11].
-    // wiener_filter takes win_r (cycle 1 from win_flat), latency 11 cycles
-    // (STAGES+3 = 8+3) → wiener_px at cycle 12.
+    // wiener_r/wiener_r2 align the Wiener output with comb_d[11].
+    // wiener_filter takes win_r (cycle 1 from win_flat), latency 12 cycles
+    // (STAGES+4 = 8+4) → wiener_px at cycle 13.
     // The comb path: W(1) + G1(1) + G2(1) + C(1) + chain(11) = comb_d[11] at cycle 15.
-    // wiener_r (13) + wiener_r2 (14) + wiener_r3 (15) match that.  ✓
-    logic [DEPTH-1:0] wiener_r, wiener_r2, wiener_r3;
+    // wiener_r (14) + wiener_r2 (15) match that.  ✓
+    logic [DEPTH-1:0] wiener_r, wiener_r2;
     always_ff @(posedge clk) begin
-        if (!rst_n) begin wiener_r <= '0; wiener_r2 <= '0; wiener_r3 <= '0; end
-        else if (en) begin wiener_r <= wiener_px; wiener_r2 <= wiener_r; wiener_r3 <= wiener_r2; end
+        if (!rst_n) begin wiener_r <= '0; wiener_r2 <= '0; end
+        else if (en) begin wiener_r <= wiener_px; wiener_r2 <= wiener_r; end
     end
 
     // Everything here belongs to the same pixel: the Wiener pipeline output and
     // the delayed combinational one, chosen by the equally delayed selector.
     always_comb begin
-        mux_out = (sel_d[DIV_STAGES] == 2'b11) ? wiener_r3 : comb_d[DIV_STAGES];
+        mux_out = (sel_d[DIV_STAGES] == 2'b11) ? wiener_r2 : comb_d[DIV_STAGES];
     end
 
     always_ff @(posedge clk) begin
