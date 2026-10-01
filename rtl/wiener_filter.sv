@@ -57,7 +57,7 @@
 //
 // PIPELINED, NOT ITERATIVE
 // -----------------------
-// Total pipeline latency: STAGES + 5 cycles.
+// Total pipeline latency: STAGES + 6 cycles.
 //
 //   Row-partial-sum stage (1 cycle): registers three row subtotals
 //   rs[r] = wp[r*3]+wp[r*3+1]+wp[r*3+2] and rs2[r] = Σ wp[r*3+c]² before
@@ -347,7 +347,7 @@ module wiener_filter #(
     // MULT18X18D) was chained directly, giving ~17.6 ns from c_r[8] Q to
     // acc_r setup.  Registering here splits that into two ~8 ns hops.
     // Not an approximation — registers only move when arithmetic runs, not what
-    // it produces.  Wiener total latency: STAGES + 3 → STAGES + 4 cycles.
+    // it produces.
     logic signed [A_W-1:0] ct_r;     // centre_term registered
     logic signed [A_W-1:0] gain_r;   // gain_ext registered
     logic signed [A_W-1:0] sext_r;   // s_ext registered
@@ -357,17 +357,31 @@ module wiener_filter #(
         else if (en)  begin ct_r <= centre_term; gain_r <= gain_ext; sext_r <= s_ext; end
     end
 
-    // Second-stage accumulator: inputs now arrive from ct_r/gain_r/sext_r registers.
+    // ── Gain-product stage register ───────────────────────────────────────────
+    // gain_r × ct_r (MULT18X18D, ~4 ns) + carry chain for acc (~5 ns) =
+    // ~11.63 ns gain_r Q → acc_r setup.  Registering the product here leaves
+    // only a 3-input addition in the output-accumulator stage.
+    // Not an approximation.  Wiener total latency: STAGES + 5 → STAGES + 6
+    // cycles.  wiener_px now arrives at the same cycle as comb_d[DIV_STAGES] in
+    // filter_controller, so no alignment register is needed there.
+    logic signed [A_W-1:0] prod_r;    // gain_r * ct_r, registered
+    logic signed [A_W-1:0] sext_r2;   // sext_r registered alongside
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin prod_r <= '0; sext_r2 <= '0; end
+        else if (en)  begin prod_r <= gain_r * ct_r; sext_r2 <= sext_r; end
+    end
+
+    // Output accumulator: all inputs now arrive from registered sources — fast
+    // 3-input carry chain only.
     logic signed [A_W-1:0] acc;
     always_comb begin
-        acc = (sext_r <<< 8)
-            + (gain_r * ct_r)
+        acc = (sext_r2 <<< 8)
+            + prod_r
             + A_W'(1152);               // 9 << 7, round half up
     end
 
-    // ── Output-accumulator stage register — breaks the path from ct_r ────────
-    // Registering acc here isolates the reciprocal divide in its own stage.
-    //
+    // ── Output-accumulator stage register ────────────────────────────────────
     // acc is clamped to 0 on the way in: a negative dividend produces quot=0
     // regardless, and the clamp avoids carrying a signed value into the
     // unsigned reciprocal multiply.

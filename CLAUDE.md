@@ -273,15 +273,31 @@ row (~7 ns); pre-stage sees a fast 3-input adder from registered row partials
 (~3 ns). Not an approximation. Wiener total latency: STAGES+4 → STAGES+5 = 13
 cycles. `filter_controller` drops `wiener_r2` (wiener_px now at cycle 14 → only
 1 alignment reg needed). `PIPE_STAGES` and total latency **unchanged** at 15/16.
-Fmax: 72.03 → **88.45 MHz** (+23%). New critical path: `gain_r` Q →
+Fmax: 72.03 → 88.45 MHz (+23%). New critical path: `gain_r` Q →
 `gain_r × ct_r` (MULT18X18D) → carry chain (acc = sext_r<<8 + product + 1152)
 → `acc_r` setup (~11.63 ns). TRELLIS_FF: 1,249 → 1,349 (+100);
 TRELLIS_COMB: 1,945 → 1,871 (−74). All 5 unit benches pass.
 
-The current critical path (~11.63 ns) is `u_ctrl.u_wiener.gain_r` Q →
-`gain_r × ct_r` (MULT18X18D) → acc carry chain → `acc_r` setup. To improve
-Fmax further, pipeline the output accumulator — register the multiply product
-before adding `sext_r<<8 + 1152`.
+Done: Wiener gain-product pipeline (2026-10-01). A gain-product stage register
+inside `wiener_filter` captures `prod_r = gain_r × ct_r` (MULT18X18D, ~4 ns
+from `gain_r` Q) and `sext_r2 = sext_r` before the three-input accumulation
+`acc = sext_r2<<8 + prod_r + 1152`. The old path was `gain_r` Q → MULT →
+carry chain (three-input addition) → `acc_r` setup (~11.63 ns); after the
+register, `acc` is a fast 3-input carry-chain addition (~4 ns). Not an
+approximation. Wiener total latency: STAGES+5 → STAGES+6 = 14 cycles.
+`filter_controller` drops `wiener_r` entirely — `wiener_px` now arrives at
+cycle 15 = `comb_d[11]`, so no alignment registers remain; `PIPE_STAGES` and
+total latency **unchanged** at 15/16. Fmax: 88.45 → **88.58 MHz** (+0.1% —
+the new critical path, `acc_r` Q → `recip_prod` MULT18X18D → carry chain →
+`pixel_out` setup (~11.29 ns), was already adjacent to the old one).
+TRELLIS_FF: 1,349 → 1,375 (+26 = prod_r + sext_r2); TRELLIS_COMB: 1,871 →
+1,865 (−6). All 5 unit benches pass.
+
+The current critical path (~11.29 ns) is `u_ctrl.u_wiener.acc_r` Q →
+`recip_prod` MULT18X18D (reciprocal multiply, `acc × 233017 >> 29`) → carry
+chain → `pixel_out` setup. To improve Fmax further, pipeline between
+`recip_prod` and the output clamp — register the product before the shift and
+comparison.
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results

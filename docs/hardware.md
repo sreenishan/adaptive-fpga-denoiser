@@ -138,7 +138,8 @@ nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 | + Wiener variance stage pipeline | 49.36 MHz | 1,181 | 2 | 17 |
 | + median stage-2 pipeline | 56.82 MHz | 1,224 | 2 | 17 |
 | + Wiener gain-multiply pipeline | 72.03 MHz | 1,249 | 2 | 17 |
-| + Wiener s2 row-partial pipeline | **88.45 MHz** | **1,349** | **2** | 17 |
+| + Wiener s2 row-partial pipeline | 88.45 MHz | 1,349 | 2 | 17 |
+| + Wiener gain-product pipeline | **88.58 MHz** | **1,375** | **2** | 17 |
 
 The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
 input path) and an output-accumulator register plus reciprocal multiply (breaks
@@ -234,19 +235,35 @@ pre-stage sees only a fast 3-input adder from registered row partials (~3 ns).
 Not an approximation — arithmetic is identical.  Wiener total latency:
 STAGES+4 → STAGES+5 = 13 cycles.  `filter_controller` drops `wiener_r2`
 (only 1 alignment register needed now); `PIPE_STAGES` and total latency
-**unchanged** at 15/16.  Fmax: 72.03 → **88.45 MHz** (+23%).  New critical
+**unchanged** at 15/16.  Fmax: 72.03 → 88.45 MHz (+23%).  New critical
 path: `gain_r` Q → `gain_r × ct_r` (MULT18X18D) → carry chain (acc
 accumulation) → `acc_r` setup (~11.63 ns).  TRELLIS_FF: 1,249 → 1,349 (+100
 = rs_r[0..2] + rs2_r[0..2] + c_rs + nv_rs); TRELLIS_COMB: 1,945 → 1,871
 (−74, smaller adder tree in pre-stage).
 
+The thirteenth row pipelines the Wiener output accumulator: a gain-product
+stage register inside `wiener_filter` captures `prod_r = gain_r × ct_r`
+(MULT18X18D, ~4 ns from `gain_r` Q) and `sext_r2 = sext_r` before the
+three-input `acc = sext_r2<<8 + prod_r + 1152` addition.  The old path was
+`gain_r` Q → MULT → carry chain (three-input addition) → `acc_r` setup
+(~11.63 ns); after the register, `acc` is a fast 3-input carry-chain addition
+and the path to `acc_r` is short (~4 ns).  Not an approximation — arithmetic
+is identical.  Wiener total latency: STAGES+5 → STAGES+6 = 14 cycles.
+`filter_controller` drops `wiener_r` entirely — `wiener_px` now arrives at
+cycle 15 = `comb_d[11]`, so no alignment register is needed; `PIPE_STAGES` and
+total latency **unchanged** at 15/16.  Fmax: 88.45 → **88.58 MHz** (+0.1% —
+the new critical path, `acc_r` Q → `recip_prod` MULT18X18D → carry chain →
+`pixel_out` setup (~11.29 ns), was already adjacent to the old one).
+TRELLIS_FF: 1,349 → 1,375 (+26 = prod_r + sext_r2); TRELLIS_COMB: 1,871 →
+1,865 (−6, simpler acc).
+
 **This is an ECP5 number** — it is a like-for-like comparison on one part, not a
 claim about any target hardware.
 
-The current critical path (~11.63 ns) is `u_ctrl.u_wiener.gain_r` Q →
-`gain_r × ct_r` (MULT18X18D) → carry chain (acc = sext_r<<8 + product +
-1152) → `acc_r` setup.  To improve further, pipeline the output accumulator —
-register the multiply product before the addition.
+The current critical path (~11.29 ns) is `u_ctrl.u_wiener.acc_r` Q →
+`recip_prod` MULT18X18D (reciprocal multiply for `acc / 2304`) → carry chain
+→ `pixel_out` setup.  To improve further, pipeline between `recip_prod` and
+the output clamp — register the product before the shift and comparison.
 
 **The reciprocal multiply uses 2 extra MULT18X18D blocks** (15 → 17 = 60% of
 28) and costs **2 extra flip-flops** in Wiener. The generic LUT count is higher
@@ -270,8 +287,8 @@ nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
-| TRELLIS_COMB (LUT4) | 1,871 | 24,288 | 8% |
-| TRELLIS_FF | 1,349 | 24,288 | 6% |
+| TRELLIS_COMB (LUT4) | 1,865 | 24,288 | 8% |
+| TRELLIS_FF | 1,375 | 24,288 | 6% |
 | DP16KD (BRAM18) | 2 | 56 | 3% |
 | MULT18X18D (DSP) | 17 | 28 | 60% |
 
