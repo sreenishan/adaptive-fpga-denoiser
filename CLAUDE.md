@@ -305,11 +305,24 @@ STAGES+6 → STAGES+7 = 15 cycles. `filter_controller`: `DIV_STAGES` 11 → 12,
 TRELLIS_FF: 1,375 → 1,399 (+24 = recip_r); TRELLIS_COMB: 1,865 → 1,863 (−2).
 All 5 unit benches pass.
 
-The current critical path (~10.41 ns) is `u_ctrl.u_wiener.p1_r` Q →
-`v81 = p1_r − p2_r` → `den_v` max comparison (carry chain) → restoring-
-divider step 0 (`nxt_0`) → `rem_r[1]` setup. To improve Fmax further,
-register `den_v` (or `nxt_0` inputs) to break the variance-stage →
-divider-step-0 path.
+Done: Wiener den_v pipeline (2026-10-01). A den_v stage register inside
+`wiener_filter` captures `num_v_r = max(0, v81−nv81_r)` and `den_v_r =
+max(v81, nv81_r)` (max comparison, 24-bit carry chain) before restoring-
+divider step 0.  The old path was `p1_r` Q → v81 subtraction → den_v carry
+chain → nxt_0 → rem_r[1] setup (~10.41 ns); after the register step 0 sees
+only its 25-bit shift/compare/subtract (~5 ns). Also registers s_r0a/c_r0a.
+Not an approximation. Wiener total latency: STAGES+7 → STAGES+8 = 16 cycles.
+`filter_controller`: `DIV_STAGES` 12 → 13, `wiener_px` at cycle 17 =
+`comb_d[13]`; `PIPE_STAGES` 16 → 17; total latency 17 → 18 cycles. Fmax:
+93.76 → **94.30 MHz** (+0.6% — new critical path `win_r` Q → median stage-1
+column-sort carry chain → `q[]` setup, ~10.25 ns). TRELLIS_FF: 1,399 → 1,478
+(+79); TRELLIS_COMB: 1,863 → 1,889 (+26). All 5 unit benches pass.
+
+The current critical path (~10.25 ns) is `u_ctrl.win_r` Q → median stage-1
+column-sort comparator carry chain (`u_median.s[0]` → `s[2]`) →
+`u_median.q[2]` setup. To improve Fmax further, pipeline inside the median
+stage-1 comparator network — split it at a mid-point with an extra register
+(adds another G1 delay cycle and grows PIPE_STAGES by 1).
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results

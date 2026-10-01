@@ -72,10 +72,10 @@ module fpga_denoiser_top #(
                                          // m_ready was low and has been lost
 );
     // Total filter_controller pipeline depth before the output register.
-    // = 1 win-input(W) + 1 gaussian-row(G1) + 1 median-align(G2) + 1 comb-pre(C) + DIV_STAGES(12) = 16.
-    // filter_controller total latency = PIPE_STAGES + 1 (output reg) = 17.
+    // = 1 win-input(W) + 1 gaussian-row(G1) + 1 median-align(G2) + 1 comb-pre(C) + DIV_STAGES(13) = 17.
+    // filter_controller total latency = PIPE_STAGES + 1 (output reg) = 18.
     // Must stay in sync with DIV_STAGES + 4 in filter_controller.sv.
-    localparam int PIPE_STAGES   = 16;
+    localparam int PIPE_STAGES   = 17;
     localparam int LATENCY       = IMG_WIDTH + 3 + PIPE_STAGES;
     localparam int FLUSH_CYCLES  = IMG_WIDTH + 2 + PIPE_STAGES;
 

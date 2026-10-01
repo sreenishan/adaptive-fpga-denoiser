@@ -57,7 +57,7 @@
 //
 // PIPELINED, NOT ITERATIVE
 // -----------------------
-// Total pipeline latency: STAGES + 7 cycles.
+// Total pipeline latency: STAGES + 8 cycles.
 //
 //   Row-partial-sum stage (1 cycle): registers three row subtotals
 //   rs[r] = wp[r*3]+wp[r*3+1]+wp[r*3+2] and rs2[r] = Σ wp[r*3+c]² before
@@ -68,10 +68,16 @@
 //   and registers s_pre, s2_pre, centre pixel and noise_var before the
 //   variance computation.
 //
-//   Variance stage (1 cycle): registers num_v (= max(0, v81-81*NV)) and den_v
-//   (= max(v81, 81*NV)) after the MULT18X18D that computes s_pre*s_pre.
-//   Breaks the path: s_pre Q → s_pre*s_pre (DSP) → v81 subtract → den_v
-//   compare → rem_r[1] setup, which was ~20 ns on ECP5-25k.
+//   Variance stage (1 cycle): registers p1_r (= 9*s2_pre) and p2_r
+//   (= s_pre*s_pre, MULT18X18D) before the subtraction.  Breaks the path:
+//   s_pre Q → s_pre*s_pre (DSP) → v81 subtract → den_v compare → rem_r[1]
+//   setup, which was ~20 ns on ECP5-25k.  After the register, v81 = p1_r -
+//   p2_r is a fast 24-bit subtraction.
+//
+//   den_v stage (1 cycle): registers num_v (= max(0, v81-81*NV)) and den_v
+//   (= max(v81, 81*NV)) after the max comparison.  Breaks p1_r Q → v81
+//   subtract → den_v carry chain → rem_r[1] setup (~10.41 ns on ECP5-25k)
+//   into two hops.  Not an approximation.
 //
 //   Restoring-division stages (STAGES = 8 cycles): each step ends in a
 //   register; eight pixels are in flight at once, throughput one pixel/cycle.
@@ -244,6 +250,24 @@ module wiener_filter #(
         den_v = (v81 > nv81_r) ? v81 : nv81_r;
     end
 
+    // ── den_v stage register ────────────────────────────────────────────────
+    // p1_r Q → v81 = p1_r − p2_r (subtraction, ~2 ns) → den_v max comparison
+    // (carry chain, ~6 ns) → nxt_0 → rem_r[1] setup was ~10.41 ns.
+    // Registering num_v, den_v (and carry-along s/centre) here leaves only
+    // the 25-bit shift/compare/subtract of step 0 (~5 ns).
+    // Not an approximation.  Wiener total latency: STAGES + 7 → STAGES + 8.
+    logic [V_W-1:0]  num_v_r, den_v_r;
+    logic [S_W-1:0]  s_r0a;
+    logic [DEPTH-1:0] c_r0a;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            num_v_r <= '0; den_v_r <= '0; s_r0a <= '0; c_r0a <= '0;
+        end else if (en) begin
+            num_v_r <= num_v; den_v_r <= den_v; s_r0a <= s_r0; c_r0a <= c_r0;
+        end
+    end
+
     // Pipeline registers, index 1..STAGES: the value after that many stages.
     // `den`, `s` and the centre pixel ride along because the remaining steps
     // and the output arithmetic still need them when this pixel's quotient
@@ -264,13 +288,13 @@ module wiener_filter #(
     logic         bit_c [1:STAGES-1];
     logic [V_W:0] nxt_c [1:STAGES-1];
 
-    // Step 1 works from the variance-stage register outputs (v81 = p1_r - p2_r,
-    // num_v, den_v) — all fast combinational from registered products.
+    // Step 0 works from the den_v stage register outputs (num_v_r, den_v_r,
+    // s_r0a, c_r0a) — all registered; only a fast shift/compare/subtract remains.
     logic [V_W:0] sh_0, nxt_0;
     logic         bit_0;
-    assign sh_0  = {1'b0, num_v} << 1;
-    assign bit_0 = (sh_0 >= {1'b0, den_v});
-    assign nxt_0 = bit_0 ? (sh_0 - {1'b0, den_v}) : sh_0;
+    assign sh_0  = {1'b0, num_v_r} << 1;
+    assign bit_0 = (sh_0 >= {1'b0, den_v_r});
+    assign nxt_0 = bit_0 ? (sh_0 - {1'b0, den_v_r}) : sh_0;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -282,9 +306,9 @@ module wiener_filter #(
         end else if (en) begin
             rem_r[1] <= nxt_0;
             q_r[1]   <= {7'b0, bit_0};      // MSB first; seven bits still to come
-            den_r[1] <= den_v;              // from variance-stage register output
-            s_r[1]   <= s_r0;              // from variance-stage register
-            c_r[1]   <= c_r0;              // from variance-stage register
+            den_r[1] <= den_v_r;             // from den_v stage register
+            s_r[1]   <= s_r0a;              // from den_v stage register
+            c_r[1]   <= c_r0a;              // from den_v stage register
         end
     end
 

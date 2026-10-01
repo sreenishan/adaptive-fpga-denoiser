@@ -43,8 +43,8 @@ module never grew.
 in the generator that cycle, which trails the input pixel by IMG_WIDTH+1. Change
 them between frames.
 
-**Latency and flush.** The filter_controller pipeline is `PIPE_STAGES` = 16 deep
-(1 win-input + 1 gaussian-row/G1 + 1 median-align/G2 + 1 comb-pre + 12 delay-chain/Wiener stages), so
+**Latency and flush.** The filter_controller pipeline is `PIPE_STAGES` = 17 deep
+(1 win-input + 1 gaussian-row/G1 + 1 median-align/G2 + 1 comb-pre + 13 delay-chain/Wiener stages), so
 the first `m_valid` appears `LATENCY` = IMG_WIDTH+3+PIPE_STAGES advances after
 the first pixel, and the drain is `FLUSH_CYCLES` = IMG_WIDTH+2+PIPE_STAGES.
 Both are localparams in `rtl/fpga_denoiser_top.sv`; read them rather than
@@ -140,7 +140,8 @@ nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 | + Wiener gain-multiply pipeline | 72.03 MHz | 1,249 | 2 | 17 |
 | + Wiener s2 row-partial pipeline | 88.45 MHz | 1,349 | 2 | 17 |
 | + Wiener gain-product pipeline | 88.58 MHz | 1,375 | 2 | 17 |
-| + Wiener reciprocal-product pipeline | **93.76 MHz** | **1,399** | **2** | 17 |
+| + Wiener reciprocal-product pipeline | 93.76 MHz | 1,399 | 2 | 17 |
+| + Wiener den_v pipeline | **94.30 MHz** | **1,478** | **2** | 17 |
 
 The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
 input path) and an output-accumulator register plus reciprocal multiply (breaks
@@ -274,14 +275,31 @@ chain) → `nxt_0` LUT → `rem_r[1]` setup (~10.41 ns) — the variance stage
 into restoring-divider step 0.  TRELLIS_FF: 1,375 → 1,399 (+24 = recip_r);
 TRELLIS_COMB: 1,865 → 1,863 (−2).
 
+The fifteenth row pipelines the Wiener den_v computation: a den_v stage
+register inside `wiener_filter` captures `num_v_r = max(0, v81 − nv81_r)` and
+`den_v_r = max(v81, nv81_r)` (the max comparison, 24-bit carry chain) before
+restoring-divider step 0.  The old path was `p1_r` Q → `v81` subtraction →
+`den_v` carry chain → `nxt_0` → `rem_r[1]` setup (~10.41 ns); after the
+register, step 0 sees only its 25-bit shift/compare/subtract (~5 ns).  Also
+registers `s_r0a` and `c_r0a` to carry alongside.  Not an approximation —
+arithmetic is identical.  Wiener total latency: STAGES+7 → STAGES+8 = 16
+cycles.  `filter_controller`: `DIV_STAGES` 12 → 13, `wiener_px` at cycle 17 =
+`comb_d[13]`; `PIPE_STAGES` 16 → 17; total latency 17 → 18 cycles.  Fmax:
+93.76 → **94.30 MHz** (+0.6% — the new critical path, `win_r` Q → median
+stage-1 column-sort carry chain → `q[]` setup (~10.25 ns), is a different
+bottleneck in the median filter).  TRELLIS_FF: 1,399 → 1,478 (+79 = num_v_r +
+den_v_r + s_r0a + c_r0a + 1 extra delay-chain stage); TRELLIS_COMB: 1,863 →
+1,889 (+26, extra carry chain depth for den_v comparison).
+
 **This is an ECP5 number** — it is a like-for-like comparison on one part, not a
 claim about any target hardware.
 
-The current critical path (~10.41 ns) is `u_ctrl.u_wiener.p1_r` Q →
-`v81 = p1_r − p2_r` (24-bit subtraction) → `den_v` max comparison (carry
-chain) → restoring-divider step 0 (`nxt_0`) → `rem_r[1]` setup.  To improve
-further, register `den_v` (or the first `rem_r`/`nxt_0` inputs) to break the
-variance-stage → divider-step-0 path.
+The current critical path (~10.25 ns) is `u_ctrl.win_r` Q → median filter
+stage-1 column-sort comparator carry chain (`u_median.s[0]` → `s[2]`) →
+`u_median.q[2]` setup.  To improve further, pipeline inside the median
+column-sort (split the stage-1 comparator network at a mid-point) — but this
+would add another G1 delay cycle in filter_controller and grow `PIPE_STAGES`
+by one more.
 
 **The reciprocal multiply uses 2 extra MULT18X18D blocks** (15 → 17 = 60% of
 28) and costs **2 extra flip-flops** in Wiener. The generic LUT count is higher
@@ -305,8 +323,8 @@ nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
-| TRELLIS_COMB (LUT4) | 1,863 | 24,288 | 8% |
-| TRELLIS_FF | 1,399 | 24,288 | 6% |
+| TRELLIS_COMB (LUT4) | 1,889 | 24,288 | 8% |
+| TRELLIS_FF | 1,478 | 24,288 | 6% |
 | DP16KD (BRAM18) | 2 | 56 | 3% |
 | MULT18X18D (DSP) | 17 | 28 | 60% |
 

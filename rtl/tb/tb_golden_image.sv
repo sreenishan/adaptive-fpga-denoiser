@@ -31,7 +31,7 @@ module tb_golden_image;
     parameter int NV_W      = 16;
     parameter int DEPTH     = 8;
     // Must match fpga_denoiser_top's PIPE_STAGES.
-    localparam int PIPE_STAGES = 16;
+    localparam int PIPE_STAGES = 17;
     localparam int N = W * H;
 
     logic             clk = 1'b0;
