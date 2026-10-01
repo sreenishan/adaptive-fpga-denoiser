@@ -44,7 +44,7 @@ in the generator that cycle, which trails the input pixel by IMG_WIDTH+1. Change
 them between frames.
 
 **Latency and flush.** The filter_controller pipeline is `PIPE_STAGES` = 18 deep
-(1 win-input + 1 G1 + 1 G2 + 1 G3 + 1 G4 + 1 comb-pre + 12 delay-chain/Wiener stages), so
+(1 win-input + 1 G1 + 1 G2 + 1 G3 + 1 G4 + 1 G5 + 1 comb-pre + 11 delay-chain/Wiener stages), so
 the first `m_valid` appears `LATENCY` = IMG_WIDTH+3+PIPE_STAGES advances after
 the first pixel, and the drain is `FLUSH_CYCLES` = IMG_WIDTH+2+PIPE_STAGES.
 Both are localparams in `rtl/fpga_denoiser_top.sv`; read them rather than
@@ -144,7 +144,8 @@ nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 | + Wiener den_v pipeline | 94.30 MHz | 1,478 | 2 | 17 |
 | + median stage-1 column-sort pipeline | 102.16 MHz | 1,550 | 2 | 17 |
 | + median stage-2b-a pipeline | 102.18 MHz | 1,574 | 2 | 17 |
-| + Wiener squaring stage pipeline | **115.86 MHz** | **1,783** | **2** | 17 |
+| + Wiener squaring stage pipeline | 115.86 MHz | 1,783 | 2 | 17 |
+| + median stage-2a pipeline | **104.37 MHz** | **1,839** | **2** | 17 |
 
 The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
 input path) and an output-accumulator register plus reciprocal multiply (breaks
@@ -323,6 +324,26 @@ comparators deep) → `u_ctrl.u_median.r[4]` setup (~9.40 ns) — the median
 stage-2a inside `median_filter`.  TRELLIS_FF: 1,574 → 1,783 (+209 = sq_r[0..8]
 nine 20-bit squares + rsum_r[0..2] three 12-bit sums); TRELLIS_COMB: 1,887 → 1,887.
 
+The nineteenth row pipelines the median stage-2a comparator network:
+`median_filter`'s three-layer stage-2a (steps 10-16) is split after layer 1 by
+inserting `v1_r[0..8]` between stage 2a-a (steps 10-12: CS(0,3)/CS(5,8)/CS(4,7),
+1 comparator deep from `q[]`) and stage 2a-b (steps 13-16: three comparators
+then one, 2 layers deep from `v1_r[]`).  The old path was `q[]` Q →
+3-layer stage-2a → `r[]` setup (~9.40 ns); after the register, the worst
+sub-path is `v1_r` Q → 2 layers → `r[]` setup (~6 ns).  Not an approximation —
+arithmetic is identical, verified exact over all unit-bench cases.
+`median_filter` latency: 4 → 5 cycles.  `filter_controller` adds Stage G5
+(1 extra delay cycle for gaussian/bypass before the `comb_px` mux);
+`DIV_STAGES` 12 → 11 (chain shortened by the extra fixed stage); `PIPE_STAGES`
+and total latency are **unchanged** at 18/19 cycles.  Fmax: 115.86 → **104.37 MHz**
+(−10% — the median stage-2a path was cleared but the Wiener reciprocal-product
+path `acc_r` Q → MULT18X18D → carry chain (~9.58 ns) became critical, and
+routing congestion from the added logic slightly degraded placement).
+New critical path: `u_ctrl.u_wiener.acc_r[15]` Q → `recip_prod` MULT18X18D →
+carry chain (~9.58 ns) — the Wiener reciprocal-product accumulation.
+TRELLIS_FF: 1,783 → 1,839 (+56 = v1_r[0..8] nine 8-bit registers + G5 signals);
+TRELLIS_COMB: 1,887 → 1,864 (−23, simpler 2-layer stage 2a-b).
+
 The seventeenth row pipelines the median stage-2b comparator network:
 `median_filter`'s three-comparator stage-2b (steps 17-19) is split after step 17
 by inserting `w_r[0..8]` between stage 2b-a (step 17: CS(4,2), 1 comparator deep
@@ -344,11 +365,11 @@ vld_wr5 — placement-merged so fewer FFs than the raw bit count); TRELLIS_COMB:
 **This is an ECP5 number** — it is a like-for-like comparison on one part, not a
 claim about any target hardware.
 
-The current critical path (~9.40 ns) is `u_ctrl.u_median.q[4]` Q → stage-2a
-(steps 10-16, 3 comparators deep) → `u_ctrl.u_median.r[4]` setup — the median
-stage-2a carry chain inside `median_filter`.
-To improve further, pipeline inside the median stage-2a comparator network
-(steps 10-16, 3 deep — split into sub-stages with a register).
+The current critical path (~9.58 ns) is `u_ctrl.u_wiener.acc_r[15]` Q →
+`recip_prod` MULT18X18D → carry chain — the Wiener reciprocal-product
+accumulation inside `wiener_filter`.
+To improve further, pipeline the Wiener reciprocal-product accumulation path
+(`acc_r` Q → MULT18X18D → carry chain → `recip_r` setup, ~9.58 ns).
 
 **The reciprocal multiply uses 2 extra MULT18X18D blocks** (15 → 17 = 60% of
 28) and costs **2 extra flip-flops** in Wiener. The generic LUT count is higher

@@ -9,17 +9,19 @@
 // Stage 1b (comb): column-sort layers 2-3 — CS(0,1)/CS(3,4)/CS(6,7) then
 //                  CS(1,2)/CS(4,5)/CS(7,8), 2 deep.
 // Register q[0..8]: captures the nine fully sorted-column values.
-// Stage 2a (comb): steps 10-16 — discard extremes + one converge step, 3 deep.
+// Stage 2a-a (comb): steps 10-12 — discard extremes, 1 deep.
+// Register v1_r[0..8]: captures the step-10-12 output.
+// Stage 2a-b (comb): steps 13-16 — first converge, 2 deep.
 // Register r[0..8]: captures all nine values after steps 10-16.
 // Stage 2b-a (comb): step 17 — CS(4,2), 1 deep.
 // Register w_r[0..8]: captures the step-17 output.
 // Stage 2b-b (comb): steps 18-19 — CS(6,4) then CS(4,2), 2 deep.
 //
-// Latency: 4 clock cycles.  filter_controller adds Stages G2, G3 and G4 to
-// delay gaussian_px and centre_r by three extra cycles so all paths meet at
-// cycle 5 from win_flat (PIPE_STAGES = 18, total pipeline latency = 19).
+// Latency: 5 clock cycles.  filter_controller adds Stages G2, G3, G4 and G5 to
+// delay gaussian_px and centre_r by four extra cycles so all paths meet at
+// cycle 6 from win_flat (PIPE_STAGES = 18, total pipeline latency = 19).
 //
-// WHY THIS FIVE-WAY SPLIT
+// WHY THIS SIX-WAY SPLIT
 // -------------------------
 // Stage 1 cut the original 8-deep network to 5-deep (~20 ns on ECP5), which
 // had become the critical path after the Wiener variance stage was pipelined.
@@ -31,7 +33,11 @@
 // so stage-2b is now split after step 17:
 //   Stage 2b-a (step 17): 1 comparator deep from r[] (~3 ns).
 //   Stage 2b-b (steps 18-19): 2 comparators deep from w_r[] (~7 ns).
-// Adding one more clock cycle to filter_controller (Stage G4) aligns the paths.
+// The Wiener squaring stage moved the critical path to stage-2a (~9.40 ns),
+// so stage-2a is now split after step 12 (layer 1):
+//   Stage 2a-a (steps 10-12): 1 comparator deep from q[] (~3 ns).
+//   Stage 2a-b (steps 13-16): 2 comparators deep from v1_r[] (~7 ns).
+// Adding one more clock cycle to filter_controller (Stage G5) aligns the paths.
 //
 // WHY NO TEMPORARY / NO LATCH
 // ----------------------------
@@ -114,15 +120,34 @@ module median_filter #(
         end
     end
 
-    // ── Stage 2a (comb): steps 10-16 — discard extremes + first converge ──
-    // 3 comparators deep from q[]: layers {10,11,12} → {13,14,15} → {16}.
+    // ── Stage 2a-a (comb): steps 10-12 — discard extremes (1 layer deep) ───────
+    // CS(0,3), CS(5,8), CS(4,7): three independent comparators in parallel.
+    logic [DEPTH-1:0] v1 [0:8];
+    always_comb begin
+        for (int i = 0; i < 9; i++) v1[i] = q[i];
+        // 10..12: discard the impossible extremes (layer 1)
+        {v1[0], v1[3]} = (v1[0] > v1[3]) ? {v1[3], v1[0]} : {v1[0], v1[3]};
+        {v1[5], v1[8]} = (v1[5] > v1[8]) ? {v1[8], v1[5]} : {v1[5], v1[8]};
+        {v1[4], v1[7]} = (v1[4] > v1[7]) ? {v1[7], v1[4]} : {v1[4], v1[7]};
+    end
+
+    // ── Stage 2a-a register ───────────────────────────────────────────────────
+    // Breaks q[] Q → 3-layer stage-2a → r[] setup (~9.40 ns on ECP5-25k)
+    // into q[] Q → steps 10-12 (~3 ns) → v1_r; v1_r Q → steps 13-16 (2 layers) → r[].
+    logic [DEPTH-1:0] v1_r [0:8];
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            for (int i = 0; i < 9; i++) v1_r[i] <= '0;
+        end else if (en) begin
+            for (int i = 0; i < 9; i++) v1_r[i] <= v1[i];
+        end
+    end
+
+    // ── Stage 2a-b (comb): steps 13-16 — first converge (2 layers deep) ─────
+    // 2 comparators deep from v1_r[]: layers {13,14,15} → {16}.
     logic [DEPTH-1:0] v [0:8];
     always_comb begin
-        for (int i = 0; i < 9; i++) v[i] = q[i];
-        // 10..12: discard the impossible extremes (layer 1)
-        {v[0], v[3]} = (v[0] > v[3]) ? {v[3], v[0]} : {v[0], v[3]};
-        {v[5], v[8]} = (v[5] > v[8]) ? {v[8], v[5]} : {v[5], v[8]};
-        {v[4], v[7]} = (v[4] > v[7]) ? {v[7], v[4]} : {v[4], v[7]};
+        for (int i = 0; i < 9; i++) v[i] = v1_r[i];
         // 13..15 (layer 2)
         {v[3], v[6]} = (v[3] > v[6]) ? {v[6], v[3]} : {v[3], v[6]};
         {v[1], v[4]} = (v[1] > v[4]) ? {v[4], v[1]} : {v[1], v[4]};
@@ -131,7 +156,7 @@ module median_filter #(
         {v[4], v[7]} = (v[4] > v[7]) ? {v[7], v[4]} : {v[4], v[7]};
     end
 
-    // ── Stage 2a register: captures all nine values after steps 10-16 ──────
+    // ── Stage 2a-b register: captures all nine values after steps 10-16 ─────
     logic [DEPTH-1:0] r [0:8];
     always_ff @(posedge clk) begin
         if (!rst_n) begin

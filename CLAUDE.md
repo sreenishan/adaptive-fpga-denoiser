@@ -363,10 +363,25 @@ approximation. Wiener total latency: STAGES+8 → STAGES+9 = 17 cycles.
 → 1,783 (+209 = sq_r[0..8] + rsum_r[0..2]); TRELLIS_COMB: 1,887 (unchanged).
 All 5 unit benches pass.
 
-The current critical path (~9.40 ns) is `u_ctrl.u_median.q[4]` Q → stage-2a
-(steps 10-16, 3 comparators deep) → `u_ctrl.u_median.r[4]` setup inside
-`median_filter`. To improve Fmax further, pipeline inside the median stage-2a
-comparator network (steps 10-16, 3 deep).
+Done: median stage-2a pipeline (2026-10-02). `median_filter`'s three-layer
+stage-2a (steps 10-16) split after layer 1 by inserting register `v1_r[0..8]`:
+stage 2a-a (steps 10-12: CS(0,3)/CS(5,8)/CS(4,7), 1 comparator deep from `q[]`) →
+`v1_r` → stage 2a-b (steps 13-16: layers 2-3, 2 comparators deep). The old path
+was `q[]` Q → 3-layer stage-2a → `r[]` setup (~9.40 ns); after the register the
+worst sub-path is `v1_r` Q → 2 layers → `r[]` setup (~6 ns). Not an
+approximation. `median_filter` latency: 4 → 5 cycles. `filter_controller` adds
+Stage G5 (`gaussian_r5`, `centre_r5`, `sel_wr6`, `vld_wr6`); `DIV_STAGES` 12 →
+11; `PIPE_STAGES` and total latency **unchanged** at 18/19 cycles. Fmax:
+115.86 → **104.37 MHz** (−10% — median stage-2a cleared but the Wiener
+reciprocal-product carry chain ~9.58 ns became critical; routing congestion from
+the added logic slightly degraded placement). New critical path:
+`u_ctrl.u_wiener.acc_r[15]` Q → `recip_prod` MULT18X18D → carry chain (~9.58 ns).
+TRELLIS_FF: 1,783 → 1,839 (+56 = v1_r[0..8] + G5 signals);
+TRELLIS_COMB: 1,887 → 1,864 (−23). All 5 unit benches pass.
+
+The current critical path (~9.58 ns) is `u_ctrl.u_wiener.acc_r[15]` Q →
+`recip_prod` MULT18X18D → carry chain inside `wiener_filter`. To improve Fmax
+further, pipeline the Wiener reciprocal-product accumulation path.
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results
