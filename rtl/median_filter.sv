@@ -4,26 +4,31 @@
 // (Paeth, "Median Finding on a 3x3 Grid", Graphics Gems I), split into
 // three combinational stages separated by two pipeline registers.
 //
-// Stage 1  (comb): sort each of the three columns — steps 1-9, 3 deep.
-// Register q[0..8]: captures the nine sorted-column values.
+// Stage 1a (comb): column-sort layer 1 — CS(1,2)/CS(4,5)/CS(7,8), 1 deep.
+// Register s1_r[0..8]: captures the layer-1 output.
+// Stage 1b (comb): column-sort layers 2-3 — CS(0,1)/CS(3,4)/CS(6,7) then
+//                  CS(1,2)/CS(4,5)/CS(7,8), 2 deep.
+// Register q[0..8]: captures the nine fully sorted-column values.
 // Stage 2a (comb): steps 10-16 — discard extremes + one converge step, 3 deep.
 // Register r[0..8]: captures all nine values after steps 10-16.
 // Stage 2b (comb): steps 17-19 — final convergence, 3 deep.
 //
-// Latency: 2 clock cycles.  filter_controller adds Stage G2 to delay
-// gaussian_px and centre_r by one extra cycle so all paths meet at cycle 3
-// from win_flat (PIPE_STAGES = 15, total pipeline latency = 16).
+// Latency: 3 clock cycles.  filter_controller adds Stages G2 and G3 to delay
+// gaussian_px and centre_r by two extra cycles so all paths meet at cycle 4
+// from win_flat (PIPE_STAGES = 17, total pipeline latency = 18).
 //
-// WHY THIS THREE-WAY SPLIT
+// WHY THIS FOUR-WAY SPLIT
 // -------------------------
 // Stage 1 cut the original 8-deep network to 5-deep (~20 ns on ECP5), which
 // had become the critical path after the Wiener variance stage was pipelined.
-// The five-comparator Stage 2 (steps 10-19) is now split at step 16:
+// The five-comparator Stage 2 (steps 10-19) was split at step 16:
 //   Stage 2a (steps 10-16): 3 comparators deep from q[].
 //   Stage 2b (steps 17-19): 3 comparators deep from r[].
-// Both halves are ~12 ns, versus ~20 ns for the original five-deep stage.
-// Adding one more clock cycle to filter_controller (Stage G2) aligns the
-// paths.
+// The 3-layer column-sort was then the new critical path (~10.25 ns).
+// It is now split after layer 1:
+//   Stage 1a (layer 1): 1 comparator deep from p[] (~3 ns).
+//   Stage 1b (layers 2-3): 2 comparators deep from s1_r[] (~7 ns).
+// Adding one more clock cycle to filter_controller (Stage G3) aligns the paths.
 //
 // WHY NO TEMPORARY / NO LATCH
 // ----------------------------
@@ -58,27 +63,45 @@ module median_filter #(
     assign p[7] = win_flat[(2*3+1)*DEPTH +: DEPTH];
     assign p[8] = win_flat[(2*3+2)*DEPTH +: DEPTH];
 
-    // ── Stage 1 (comb): sort each column (steps 1-9, 3 comparators deep) ───
-    // Columns are independent so they are processed in column order rather than
-    // the interleaved order in the original — the hardware is identical.
+    // ── Stage 1a (comb): column-sort layer 1 (1 comparator deep) ────────────
+    // CS(1,2), CS(4,5), CS(7,8) — three independent column bottom-pair swaps.
+    logic [DEPTH-1:0] s1 [0:8];
+    always_comb begin
+        for (int i = 0; i < 9; i++) s1[i] = p[i];
+        {s1[1], s1[2]} = (s1[1] > s1[2]) ? {s1[2], s1[1]} : {s1[1], s1[2]};
+        {s1[4], s1[5]} = (s1[4] > s1[5]) ? {s1[5], s1[4]} : {s1[4], s1[5]};
+        {s1[7], s1[8]} = (s1[7] > s1[8]) ? {s1[8], s1[7]} : {s1[7], s1[8]};
+    end
+
+    // ── Stage 1a register ─────────────────────────────────────────────────────
+    // Breaks win_r Q → 3-layer column-sort → q[] setup (~10.25 ns on ECP5-25k)
+    // into win_r Q → layer 1 (~3 ns) → s1_r; s1_r Q → layers 2-3 → q[].
+    logic [DEPTH-1:0] s1_r [0:8];
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            for (int i = 0; i < 9; i++) s1_r[i] <= '0;
+        end else if (en) begin
+            for (int i = 0; i < 9; i++) s1_r[i] <= s1[i];
+        end
+    end
+
+    // ── Stage 1b (comb): column-sort layers 2-3 (2 comparators deep) ─────────
+    // CS(0,1), CS(3,4), CS(6,7) then CS(1,2), CS(4,5), CS(7,8).
     logic [DEPTH-1:0] s [0:8];
     always_comb begin
-        for (int i = 0; i < 9; i++) s[i] = p[i];
-        // Column 0: p[0],p[1],p[2] → s[0]≤s[1]≤s[2]
-        {s[1], s[2]} = (s[1] > s[2]) ? {s[2], s[1]} : {s[1], s[2]};
+        for (int i = 0; i < 9; i++) s[i] = s1_r[i];
+        // Column 0 layers 2-3
         {s[0], s[1]} = (s[0] > s[1]) ? {s[1], s[0]} : {s[0], s[1]};
         {s[1], s[2]} = (s[1] > s[2]) ? {s[2], s[1]} : {s[1], s[2]};
-        // Column 1: p[3],p[4],p[5] → s[3]≤s[4]≤s[5]
-        {s[4], s[5]} = (s[4] > s[5]) ? {s[5], s[4]} : {s[4], s[5]};
+        // Column 1 layers 2-3
         {s[3], s[4]} = (s[3] > s[4]) ? {s[4], s[3]} : {s[3], s[4]};
         {s[4], s[5]} = (s[4] > s[5]) ? {s[5], s[4]} : {s[4], s[5]};
-        // Column 2: p[6],p[7],p[8] → s[6]≤s[7]≤s[8]
-        {s[7], s[8]} = (s[7] > s[8]) ? {s[8], s[7]} : {s[7], s[8]};
+        // Column 2 layers 2-3
         {s[6], s[7]} = (s[6] > s[7]) ? {s[7], s[6]} : {s[6], s[7]};
         {s[7], s[8]} = (s[7] > s[8]) ? {s[8], s[7]} : {s[7], s[8]};
     end
 
-    // ── Pipeline register: capture sorted-column values ───────────────────
+    // ── Stage 1b register: capture sorted-column values ──────────────────────
     logic [DEPTH-1:0] q [0:8];
     always_ff @(posedge clk) begin
         if (!rst_n) begin

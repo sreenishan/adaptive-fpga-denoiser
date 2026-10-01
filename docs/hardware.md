@@ -141,7 +141,8 @@ nextpnr-ecp5 --25k --package CABGA381 --lpf-allow-unconstrained --freq 100
 | + Wiener s2 row-partial pipeline | 88.45 MHz | 1,349 | 2 | 17 |
 | + Wiener gain-product pipeline | 88.58 MHz | 1,375 | 2 | 17 |
 | + Wiener reciprocal-product pipeline | 93.76 MHz | 1,399 | 2 | 17 |
-| + Wiener den_v pipeline | **94.30 MHz** | **1,478** | **2** | 17 |
+| + Wiener den_v pipeline | 94.30 MHz | 1,478 | 2 | 17 |
+| + median stage-1 column-sort pipeline | **102.16 MHz** | **1,550** | **2** | 17 |
 
 The third row adds a pre-stage register (breaks the 25 ns window-sum → step-0
 input path) and an output-accumulator register plus reciprocal multiply (breaks
@@ -291,15 +292,26 @@ bottleneck in the median filter).  TRELLIS_FF: 1,399 → 1,478 (+79 = num_v_r +
 den_v_r + s_r0a + c_r0a + 1 extra delay-chain stage); TRELLIS_COMB: 1,863 →
 1,889 (+26, extra carry chain depth for den_v comparison).
 
+The sixteenth row pipelines the median stage-1 column-sort: `median_filter`'s
+3-layer column sort (steps 1-9) is split after layer 1 by inserting `s1_r[0..8]`
+between stage 1a (layer 1, 1 comparator deep: CS(1,2)/CS(4,5)/CS(7,8)) and
+stage 1b (layers 2-3, 2 comparators deep).  The old path was `win_r` Q →
+3 column-sort layers → `q[]` setup (~10.25 ns); after the register, the worst
+sub-path is `s1_r` Q → 2 layers → `q[]` setup (~7 ns).  `median_filter` latency:
+2 → 3 cycles.  `filter_controller` adds Stage G3 (1 extra delay cycle for
+gaussian/bypass before the `comb_px` mux); `DIV_STAGES` 13 → 12 (chain shortened
+by the extra fixed stage); `PIPE_STAGES` and total latency are **unchanged** at
+17/18 cycles.  Fmax: 94.30 → **102.16 MHz** (+8.3%).  New critical path:
+`u_ctrl.u_median.r[4]` Q → stage-2b (steps 17-19, 3 comparators deep) →
+`u_ctrl.comb_r` setup (~10.45 ns).  TRELLIS_FF: 1,478 → 1,550 (+72 = s1_r[0..8]
+nine 8-bit registers); TRELLIS_COMB: 1,889 → 1,890 (+1, routing).
+
 **This is an ECP5 number** — it is a like-for-like comparison on one part, not a
 claim about any target hardware.
 
-The current critical path (~10.25 ns) is `u_ctrl.win_r` Q → median filter
-stage-1 column-sort comparator carry chain (`u_median.s[0]` → `s[2]`) →
-`u_median.q[2]` setup.  To improve further, pipeline inside the median
-column-sort (split the stage-1 comparator network at a mid-point) — but this
-would add another G1 delay cycle in filter_controller and grow `PIPE_STAGES`
-by one more.
+The current critical path (~10.45 ns) is `u_ctrl.u_median.r[4]` Q → median
+stage-2b (steps 17-19, 3 comparators deep from `r[]`) → `u_ctrl.comb_r` setup.
+To improve further, pipeline inside the median stage-2b comparator network.
 
 **The reciprocal multiply uses 2 extra MULT18X18D blocks** (15 → 17 = 60% of
 28) and costs **2 extra flip-flops** in Wiener. The generic LUT count is higher
@@ -323,8 +335,8 @@ nextpnr-ecp5 0.9-2, seed 1.  No board has been programmed.
 
 | Resource | Used | Available | Utilisation |
 |---|---:|---:|---:|
-| TRELLIS_COMB (LUT4) | 1,889 | 24,288 | 8% |
-| TRELLIS_FF | 1,478 | 24,288 | 6% |
+| TRELLIS_COMB (LUT4) | 1,890 | 24,288 | 8% |
+| TRELLIS_FF | 1,550 | 24,288 | 6% |
 | DP16KD (BRAM18) | 2 | 56 | 3% |
 | MULT18X18D (DSP) | 17 | 28 | 60% |
 
@@ -345,21 +357,21 @@ From nextpnr-ecp5 0.9-2, `--freq 100 --lpf-allow-unconstrained`, seed 1.
 | Item | Value |
 |---|---|
 | Clock target | 100 MHz |
-| Achieved Fmax | 88.45 MHz |
-| Timing closure | FAIL |
-| Critical path | `gain_r` Q → `gain_r × ct_r` (MULT18X18D) → carry chain → `acc_r` setup (~11.63 ns) |
+| Achieved Fmax | 102.16 MHz |
+| Timing closure | PASS at 100 MHz |
+| Critical path | `r[4]` Q → stage-2b (steps 17-19, 3 comparators) → `comb_r` setup (~10.45 ns) |
 
-The design does not close timing at 100 MHz.  The `--lpf-allow-unconstrained`
+The design closes timing at 100 MHz.  The `--lpf-allow-unconstrained`
 flag means the clock enters through a general I/O cell; a dedicated clock pin
 (LOCATE COMP "clk" SITE "...") would reduce I/O overhead.
 
-The critical path is now in the Wiener output accumulator: `gain_r` Q →
-`gain_r × ct_r` (MULT18X18D for the gain × centre_term product) → carry chain
-(adding `sext_r << 8` and the bias 1152) → `acc_r` setup (~11.63 ns total).
+The critical path is in the median filter stage-2b: `u_ctrl.u_median.r[4]` Q →
+the final three comparators (steps 17-19, 3 carry chains deep) → `u_ctrl.comb_r`
+setup (~10.45 ns total).
 
 **Next steps to improve Fmax** (in order of likely impact):
-1. Pipeline the output accumulator — register the `gain_r × ct_r` product
-   before adding `sext_r<<8 + 1152`.
+1. Pipeline the median stage-2b comparator network (steps 17-19, 3 deep →
+   split at step 18 to break the ~10.45 ns path).
 2. Use a dedicated clock pin via a LOCATE constraint in `ecp5_25k.lpf`.
 3. Target a 45k or 85k ECP5 with a higher speed grade.
 

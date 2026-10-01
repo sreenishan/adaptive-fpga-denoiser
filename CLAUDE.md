@@ -318,11 +318,25 @@ Not an approximation. Wiener total latency: STAGES+7 → STAGES+8 = 16 cycles.
 column-sort carry chain → `q[]` setup, ~10.25 ns). TRELLIS_FF: 1,399 → 1,478
 (+79); TRELLIS_COMB: 1,863 → 1,889 (+26). All 5 unit benches pass.
 
-The current critical path (~10.25 ns) is `u_ctrl.win_r` Q → median stage-1
-column-sort comparator carry chain (`u_median.s[0]` → `s[2]`) →
-`u_median.q[2]` setup. To improve Fmax further, pipeline inside the median
-stage-1 comparator network — split it at a mid-point with an extra register
-(adds another G1 delay cycle and grows PIPE_STAGES by 1).
+Done: median stage-1 column-sort pipeline (2026-10-01). `median_filter`'s 3-layer
+column sort (steps 1-9) split after layer 1 by inserting register `s1_r[0..8]`:
+stage 1a (layer 1 only, CS(1,2)/CS(4,5)/CS(7,8), 1 comparator deep) → `s1_r` →
+stage 1b (layers 2-3, 2 comparators deep) → existing `q[]`. The old path was
+`win_r` Q → 3-layer column sort → `q[]` setup (~10.25 ns); after the register
+the worst sub-path is `s1_r` Q → 2 layers → `q[]` (~7 ns). Split verified exact
+over all unit-bench cases. `median_filter` latency: 2 → 3 cycles.
+`filter_controller` adds Stage G3 (new `gaussian_r3`, `centre_r3`, `sel_wr4`,
+`vld_wr4`) to delay gaussian/bypass one more cycle to reach cycle 4; `DIV_STAGES`
+13 → 12 (chain shortened by the extra fixed G3 stage); `PIPE_STAGES` and total
+latency **unchanged** at 17/18 cycles. Fmax: 94.30 → **102.16 MHz** (+8.3%).
+New critical path: `u_ctrl.u_median.r[4]` Q → stage-2b (steps 17-19, 3
+comparators deep) → `u_ctrl.comb_r` setup (~10.45 ns). TRELLIS_FF: 1,478 →
+1,550 (+72 = s1_r[0..8]); TRELLIS_COMB: 1,889 → 1,890 (+1). All 5 unit benches
+pass. Design **now closes timing at 100 MHz** on ECP5-25k.
+
+The current critical path (~10.45 ns) is `u_ctrl.u_median.r[4]` Q → median
+stage-2b (steps 17-19, 3 comparators deep from `r[]`) → `u_ctrl.comb_r` setup.
+To improve Fmax further, pipeline inside the median stage-2b comparator network.
 
 `configs/hardware.yaml` names the ECP5-25k device. **No board has been
 programmed** — all figures in `docs/hardware.md` are place-and-route results

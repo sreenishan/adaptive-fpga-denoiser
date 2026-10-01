@@ -8,21 +8,23 @@
 //   2'b10 — gaussian
 //   2'b11 — wiener
 //
-// Pipeline structure (total latency = DIV_STAGES + 5 = 16 cycles):
+// Pipeline structure (total latency = DIV_STAGES + 6 = 18 cycles):
 //   Stage W   — win-input register: win_flat/filter_sel/valid_in → win_r/sel_wr/vld_wr
 //               (cuts the window_gen counter → filter accumulator path, ~33 ns on ECP5)
-//   Stage G1  — column-sort register (inside median_filter, q[0..8], 9×8 bits) +
+//   Stage G1  — layer-1 register (inside median_filter, s1_r[0..8]) +
 //               gaussian row-sum register (inside gaussian_filter, 3×11 bits) +
 //               matching centre_r / sel_wr2 / vld_wr2
 //               gaussian_px combinational at cycle 2 from win_flat
-//   Stage G2  — stage-2a register (inside median_filter, r[0..8], 9×8 bits) →
-//               median_px combinational at cycle 3 from win_flat;
-//               gaussian_r2 / centre_r2 / sel_wr3 / vld_wr3 delay gaussian/bypass
-//               to cycle 3 so all comb paths arrive together
-//   Stage C   — comb pre-register: comb_px/sel_wr3/vld_wr3 → comb_r/sel_r/vld_r
+//   Stage G2  — layers-2-3 register (inside median_filter, q[0..8]) +
+//               gaussian_r2 / centre_r2 / sel_wr3 / vld_wr3
+//   Stage G3  — stage-2a register (inside median_filter, r[0..8]) →
+//               median_px combinational at cycle 4 from win_flat;
+//               gaussian_r3 / centre_r3 / sel_wr4 / vld_wr4 delay gaussian/bypass
+//               to cycle 4 so all comb paths arrive together
+//   Stage C   — comb pre-register: comb_px/sel_wr4/vld_wr4 → comb_r/sel_r/vld_r
 //   Stages 1..DIV_STAGES — delay chain aligning comb/sel/vld with the Wiener path
 //   Output    — mux then pixel_out / valid_out register
-//   (wiener_px now arrives exactly at cycle 15 = comb_d[11]; no extra wiener_r needed)
+//   (wiener_px arrives at cycle 17 = comb_d[12]; no extra wiener_r needed)
 
 `default_nettype none
 
@@ -50,7 +52,7 @@ module filter_controller #(
     // (routing + LUT mux logic, ~3.5 ns) out of the critical path so the new
     // critical path starts from win_r's Q rather than window_gen's counter FF.
     localparam int WIENER_STAGES = 8;   // restoring-division stages (wiener_filter param)
-    localparam int DIV_STAGES    = 13;  // wiener_filter latency (STAGES+8); also delay-chain depth
+    localparam int DIV_STAGES    = 12;  // wiener_filter latency (STAGES+8); chain shortened by G3 stage
 
     logic [3*3*DEPTH-1:0] win_r;
     logic [1:0]           sel_wr;
@@ -66,10 +68,10 @@ module filter_controller #(
     logic [DEPTH-1:0] gaussian_px;
     logic [DEPTH-1:0] wiener_px;
 
-    // median_filter is pipelined (2-cycle latency): Stage 1 register (q) fires at
-    // cycle 2 from win_flat; Stage 2a register (r) fires at cycle 3; median_px is
-    // the Stage 2b combinational output, available at cycle 3 from win_flat.
-    // gaussian_px and centre_r are delayed by Stage G2 (below) to match cycle 3.
+    // median_filter is pipelined (3-cycle latency): Stage 1a register (s1_r) fires at
+    // cycle 2 from win_flat; Stage 1b register (q) fires at cycle 3; Stage 2a register
+    // (r) fires at cycle 4; median_px is Stage 2b comb output at cycle 4 from win_flat.
+    // gaussian_px and centre_r are delayed by Stages G2+G3 (below) to match cycle 4.
     median_filter  #(.DEPTH(DEPTH))
         u_median  (.clk(clk), .rst_n(rst_n), .en(en),
                    .win_flat(win_r), .median_out(median_px));
@@ -85,9 +87,9 @@ module filter_controller #(
     // wiener_filter latency: STAGES(8) + row-partial(1) + pre-stage(1) + variance-stage(1) + den_v(1) + gain-multiply(1) + gain-product(1) + output-acc(1) + recip-product(1) = 16.
     // win_r delays the window by 1 cycle (cycle 1 from win_flat).
     // wiener_px arrives at cycle 17 from win_flat.
-    // The comb path: W(1) + G1(1) + G2(1) + C(1) + chain(13) = comb_d[13] at cycle 17.
-    // wiener_px (17) = comb_d[13] (17) — no alignment register needed.  ✓
-    // Output register adds one more — total latency = DIV_STAGES + 5.
+    // The comb path: W(1) + G1(1) + G2(1) + G3(1) + C(1) + chain(12) = comb_d[12] at cycle 17.
+    // wiener_px (17) = comb_d[12] (17) — no alignment register needed.  ✓
+    // Output register adds one more — total latency = DIV_STAGES + 6.
     wiener_filter  #(.DEPTH(DEPTH), .NV_W(NV_W), .STAGES(WIENER_STAGES))
         u_wiener  (.clk(clk), .rst_n(rst_n), .en(en),
                    .win_flat(win_r), .noise_var(noise_var), .wiener_out(wiener_px));
@@ -114,9 +116,9 @@ module filter_controller #(
         end
     end
 
-    // ── Stage G2: align gaussian_px and centre_r with median_px ─────────────
-    // median_filter has 2-cycle latency; median_px is at cycle 3 from win_flat.
-    // Delay gaussian_px and centre_r one more cycle so all paths meet at cycle 3.
+    // ── Stage G2: advance gaussian_px and centre_r to cycle 3 ────────────────
+    // median_filter's s1_r fires at cycle 2; q[] fires at cycle 3.
+    // Delay gaussian_px and centre_r one more cycle to reach cycle 3.
 
     logic [DEPTH-1:0] gaussian_r2;
     logic [DEPTH-1:0] centre_r2;
@@ -134,32 +136,52 @@ module filter_controller #(
         end
     end
 
+    // ── Stage G3: align gaussian_r2 and centre_r2 with median_px ────────────
+    // median_filter has 3-cycle latency; median_px is at cycle 4 from win_flat.
+    // Delay gaussian_r2 and centre_r2 one more cycle so all paths meet at cycle 4.
+
+    logic [DEPTH-1:0] gaussian_r3;
+    logic [DEPTH-1:0] centre_r3;
+    logic [1:0]       sel_wr4;
+    logic             vld_wr4;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            gaussian_r3 <= '0; centre_r3 <= '0;
+            sel_wr4 <= 2'b00; vld_wr4 <= 1'b0;
+        end else if (en) begin
+            gaussian_r3 <= gaussian_r2;
+            centre_r3   <= centre_r2;
+            sel_wr4 <= sel_wr3; vld_wr4 <= vld_wr3;
+        end
+    end
+
     // ── Output mux + pipeline register ────────────────────────────────────
     logic [DEPTH-1:0] mux_out;
 
-    // All three comb paths arrive at cycle 3 from win_flat:
-    //   median_px   — 2-cycle pipelined median_filter output (stage-2b comb)
-    //   gaussian_r2 — gaussian_px delayed one extra cycle by Stage G2
-    //   centre_r2   — bypass pixel delayed two extra cycles by G1 + G2
+    // All three comb paths arrive at cycle 4 from win_flat:
+    //   median_px   — 3-cycle pipelined median_filter output (stage-2b comb)
+    //   gaussian_r3 — gaussian_px delayed two extra cycles by Stages G2 + G3
+    //   centre_r3   — bypass pixel delayed three extra cycles by G1 + G2 + G3
     logic [DEPTH-1:0] comb_px;
     always_comb begin
-        case (sel_wr3)
-            2'b01:   comb_px = median_px;    // cycle 3 from win_flat ✓
-            2'b10:   comb_px = gaussian_r2;  // cycle 3 from win_flat ✓
-            default: comb_px = centre_r2;    // cycle 3 from win_flat ✓
+        case (sel_wr4)
+            2'b01:   comb_px = median_px;    // cycle 4 from win_flat ✓
+            2'b10:   comb_px = gaussian_r3;  // cycle 4 from win_flat ✓
+            default: comb_px = centre_r3;    // cycle 4 from win_flat ✓
         endcase
     end
 
     // Comb pre-register: comb_px emerges from stage-2b comb (3 comparators).
     // Registering here keeps the path to comb_d[1] to one FF hop.
-    // sel_r and vld_r move in lockstep with sel_wr3/vld_wr3.
+    // sel_r and vld_r move in lockstep with sel_wr4/vld_wr4.
     logic [DEPTH-1:0] comb_r;
     logic [1:0]       sel_r;
     logic             vld_r;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin comb_r <= '0; sel_r <= 2'b00; vld_r <= 1'b0; end
-        else if (en) begin comb_r <= comb_px; sel_r <= sel_wr3; vld_r <= vld_wr3; end
+        else if (en) begin comb_r <= comb_px; sel_r <= sel_wr4; vld_r <= vld_wr4; end
     end
 
     // Driven only by their always_ff blocks; see the note in wiener_filter.sv
@@ -195,7 +217,7 @@ module filter_controller #(
     end
 
     // wiener_px arrives at cycle 17 from win_flat (win_r at cycle 1 + STAGES+8 = 16 cycles).
-    // comb_d[13] also arrives at cycle 17: W(1)+G1(1)+G2(1)+C(1)+chain(13) = 17.
+    // comb_d[12] also arrives at cycle 17: W(1)+G1(1)+G2(1)+G3(1)+C(1)+chain(12) = 17.
     // They are in phase — no alignment register needed.
     always_comb begin
         mux_out = (sel_d[DIV_STAGES] == 2'b11) ? wiener_px : comb_d[DIV_STAGES];
