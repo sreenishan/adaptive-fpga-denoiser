@@ -17,7 +17,7 @@ hierarchy -check -top fpga_denoiser_top
 synth -top fpga_denoiser_top
 read_liberty -lib /pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib
 dfflibmap -liberty /pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib
-abc -liberty /pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib -D 10000 -script {+strash;ifraig;scorr;dc2;dretime;strash;&get -n;&dch -f;&nf{16};&put;buffer;upsize;dnsize;stime -p}
+abc -liberty /pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib -D 10000
 setundef -zero
 splitnets
 opt_clean -purge
