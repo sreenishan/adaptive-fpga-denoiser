@@ -96,7 +96,7 @@ jobs:
 
               echo ''
               echo '=== Stage 16: Synthesis (yosys → sky130hd) ==='
-              yosys -p "tcl fpga/asic/synth_sky130.tcl" 2>&1 | tee fpga/asic/results/synth.log
+              yosys -p 'tcl fpga/asic/synth_sky130.tcl' 2>&1 | tee fpga/asic/results/synth.log
               if [ -f fpga/asic/results/synth_stats.txt ]; then
                 echo '--- Synthesis stats ---'
                 cat fpga/asic/results/synth_stats.txt
