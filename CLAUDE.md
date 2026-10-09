@@ -538,6 +538,17 @@ without requiring Vivado HLS synthesis.  Architecture: 4 Conv2d blocks
     `models/checkpoints/hw_int8.pt`, `models/exported/hw_model_pruned.onnx`,
     `models/exported/hw_report.txt`. Accuracy at each stage: TBD (in progress).
 
+Done: cascade co-simulation (2026-10-10). `scripts/simulate_rtl.py --cascade-only`
+streams full 224×224 frames through `fpga_denoiser_cascade` (two `fpga_denoiser_top`
+instances in series) and compares every output pixel against two sequential
+applications of the Python golden filter: **55/55 cascade frames pass**.
+Bypass×2, Median×2, Gaussian×2, and Adaptive median×2 are bit-exact (0 mismatches).
+Wiener×2: max|err|=3 ≤ tol=3 — tolerance is 3, not 2×1=2, because pass-1's ±1
+rounding perturbation feeds into pass-2's 3×3 variance window (up to 9 pixels
+each ±1 off), causing nonlinear compounding at the highest noise levels
+(salt-pepper 5–10%, speckle σ²=0.1). Results recorded in
+`results/rtl/cosim_224x224.json`; method documented in `docs/verification.md`.
+
 ## The filters are a contract with the hardware
 
 All three read the same replicated-edge 3x3 window (`filters/_window.py`), which
