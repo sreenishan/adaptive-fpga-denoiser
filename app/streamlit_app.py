@@ -1555,7 +1555,7 @@ NAV_GROUPS = [
     ("Primary",        [("Dashboard", "dashboard"), ("New Processing", "process"),
                         ("Processing History", "history")]),
     ("Infrastructure", [("FPGA Devices", "fpga"), ("API", "api")]),
-    ("Insights",       [("Analytics", "analytics")]),
+    ("Insights",       [("Analytics", "analytics"), ("Comparison", "layers")]),
     ("Account",        [("Settings", "settings")]),
 ]
 
@@ -2413,6 +2413,147 @@ def step3(cfg) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# PAGE · COMPARISON
+# ═══════════════════════════════════════════════════════════════════════════
+
+_COMPARISON_DIR = _ROOT / "results" / "comparison"
+_GRID_PATH      = _COMPARISON_DIR / "comparison_grid.png"
+_TRIPLET_PATH   = _COMPARISON_DIR / "triplet.png"
+
+
+def _load_png_b64(path: Path) -> str | None:
+    """Return a base-64 PNG string, or None if the file does not exist."""
+    try:
+        return base64.b64encode(path.read_bytes()).decode()
+    except OSError:
+        return None
+
+
+def _comparison_img_block(b64s: str, title: str, sub: str) -> str:
+    return (
+        f'<div style="margin-bottom:28px;">'
+        f'<div style="font-size:var(--fs-4);font-weight:700;color:{T["text"]};'
+        f'letter-spacing:-0.015em;margin-bottom:4px;">{esc(title)}</div>'
+        f'<div style="font-size:var(--fs-2);color:{T["text_2"]};margin-bottom:12px;'
+        f'line-height:1.6;">{esc(sub)}</div>'
+        f'<div style="border:1px solid {T["border"]};border-radius:var(--r-xl);overflow:hidden;'
+        f'background:{T["elevated"]};box-shadow:var(--shadow-md);">'
+        f'<img src="data:image/png;base64,{b64s}" '
+        f'style="width:100%;display:block;" alt="{esc(title)}"/>'
+        f'</div></div>'
+    )
+
+
+def page_comparison() -> None:
+    ss = st.session_state
+    st.markdown(CSS, unsafe_allow_html=True)
+    st.markdown(
+        page_head(
+            "Filter Comparison",
+            "Side-by-side quality comparison of all denoising filters on medical test images.",
+            ["Insights", "Comparison"],
+        ),
+        unsafe_allow_html=True,
+    )
+
+    # ── Regenerate button ────────────────────────────────────────────────────
+    col_btn, col_info = st.columns([1, 4])
+    with col_btn:
+        regen = st.button("⟳ Regenerate", type="primary", use_container_width=True,
+                          help="Re-run the comparison on fresh test images from data/raw/")
+    with col_info:
+        st.markdown(
+            f'<div style="padding:9px 0;font-size:var(--fs-2);color:{T["text_3"]};">'
+            f'Images drawn from <code>data/raw/</code> — CT, MRI and Ultrasound sources. '
+            f'"Ours" applies the full adaptive selector (CNN class → severity → filter+passes).</div>',
+            unsafe_allow_html=True,
+        )
+
+    if regen:
+        with st.spinner("Generating comparison figures …"):
+            try:
+                import importlib.util, types
+                spec = importlib.util.spec_from_file_location(
+                    "visualize_comparison",
+                    str(_ROOT / "scripts" / "visualize_comparison.py"),
+                )
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                _COMPARISON_DIR.mkdir(parents=True, exist_ok=True)
+                cases = mod._make_test_cases(4)
+                mod.make_comparison_grid(cases, _COMPARISON_DIR, seed=42)
+                mod.make_triplet(cases[0], _COMPARISON_DIR, seed=42)
+                st.success("Figures regenerated.")
+            except Exception as exc:
+                st.error(f"Regeneration failed: {exc}")
+
+    # ── Format 1: comparison grid ────────────────────────────────────────────
+    st.markdown(section("Method Comparison Grid"), unsafe_allow_html=True)
+
+    grid_b64 = _load_png_b64(_GRID_PATH)
+    if grid_b64:
+        st.markdown(
+            _comparison_img_block(
+                grid_b64,
+                "Denoiser comparison — all filters",
+                "Rows: test images (CT / MRI) with different noise types. "
+                "Columns: (a) Median  (b) Gaussian  (c) Wiener  (d) Ours — adaptive selector  (e) Ground Truth. "
+                "PSNR shown below each image; best per row is bold. "
+                "Red inset: zoomed crop of the highlighted region.",
+            ),
+            unsafe_allow_html=True,
+        )
+
+        # Download button
+        st.download_button(
+            "Download comparison grid",
+            data=_GRID_PATH.read_bytes(),
+            file_name="comparison_grid.png",
+            mime="image/png",
+        )
+    else:
+        st.markdown(
+            alert(
+                "No comparison grid found",
+                "Click <strong>Regenerate</strong> to generate the figures from the medical test images.",
+                "warning",
+            ),
+            unsafe_allow_html=True,
+        )
+
+    # ── Format 2: triplet ────────────────────────────────────────────────────
+    st.markdown(section("Before / After Triplet"), unsafe_allow_html=True)
+
+    triplet_b64 = _load_png_b64(_TRIPLET_PATH)
+    if triplet_b64:
+        st.markdown(
+            _comparison_img_block(
+                triplet_b64,
+                "Original · Noisy · Denoised",
+                "Single test case showing the full denoising pipeline. "
+                "PSNR is shown on the noisy and denoised images.",
+            ),
+            unsafe_allow_html=True,
+        )
+
+        st.download_button(
+            "Download triplet",
+            data=_TRIPLET_PATH.read_bytes(),
+            file_name="triplet.png",
+            mime="image/png",
+        )
+    else:
+        st.markdown(
+            alert(
+                "No triplet found",
+                "Click <strong>Regenerate</strong> to generate the figures.",
+                "warning",
+            ),
+            unsafe_allow_html=True,
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # PAGE · HISTORY
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -2918,6 +3059,8 @@ def main() -> None:
         page_api(cfg)
     elif nav == "Analytics":
         page_analytics()
+    elif nav == "Comparison":
+        page_comparison()
     elif nav == "Settings":
         page_settings(cfg, ds, hw, clf_ready)
     else:
