@@ -538,6 +538,15 @@ without requiring Vivado HLS synthesis.  Architecture: 4 Conv2d blocks
     `models/checkpoints/hw_int8.pt`, `models/exported/hw_model_pruned.onnx`,
     `models/exported/hw_report.txt`. Accuracy at each stage: TBD (in progress).
 
+Done: sky130 synthesis (2026-10-10). `yosys 0.57+55` with the
+`sky130_fd_sc_hd__tt_025C_1v80` liberty file (fetched via `volare`) maps the design
+to 24,161 standard cells, total area 262,986 µm² (0.263 mm²). Caveat: `line_buffer`
+has no SRAM macro in the liberty file and falls back to 3,600 edfxtp FFs
+(130,610 µm² = 49.7%); with sky130 SRAM macros the total would be ~132,000 µm².
+Wiener is the largest compute block (76,696 µm², 29.2%). Results in
+`fpga/asic/results/synth_sky130.json`; stats in `fpga/asic/results/synth_stats.txt`.
+No P&R, no timing, no power — those require OpenROAD (Docker or Linux).
+
 Done: cascade co-simulation (2026-10-10). `scripts/simulate_rtl.py --cascade-only`
 streams full 224×224 frames through `fpga_denoiser_cascade` (two `fpga_denoiser_top`
 instances in series) and compares every output pixel against two sequential

@@ -1,0 +1,22 @@
+{
+  "pdk": "sky130A (sky130_fd_sc_hd)",
+  "lib": "sky130_fd_sc_hd__tt_025C_1v80 (TT 25C 1.8V)",
+  "tool": "yosys 0.57+55 (synthesis only -- no P&R, no timing, no power)",
+  "note": "line_buffer mapped to 3,600 edfxtp FFs (no SRAM macro in standard-cell lib); with sky130 SRAM macros the sequential area would be ~50% smaller",
+  "total_area_um2": 262985.9744,
+  "sequential_area_um2": 156029.6448,
+  "sequential_pct": 59.33,
+  "total_standard_cells": 24161,
+  "dfxtp_cells": 2394,
+  "edfxtp_cells": 3600,
+  "module_areas_um2": {
+    "line_buffer": 130610.2656,
+    "wiener_filter": 76696.0576,
+    "adaptive_median_filter": 22973.2832,
+    "median_filter": 13982.16,
+    "filter_controller": 10963.0144,
+    "window_gen": 4566.88,
+    "gaussian_filter": 2822.7072,
+    "fpga_denoiser_top": 371.6064
+  }
+}

@@ -70,6 +70,7 @@ fpga/asic/results/*.odb
 fpga/asic/results/*.gds
 fpga/asic/results/*.guide
 fpga/asic/results/*.txt
+!fpga/asic/results/synth_stats.txt
 
 # HLS generated files — compiled shared libraries are platform-specific.
 # nnet_code_gen.h is 0.8 KB and IS committed (needed by CI g++ compile).

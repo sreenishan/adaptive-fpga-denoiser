@@ -547,10 +547,37 @@ from the result files.
 
 ### Synthesis (yosys + sky130hd)
 
+Completed 2026-10-10 via `yosys 0.57+55` with the `sky130_fd_sc_hd__tt_025C_1v80`
+liberty file (TT 25°C 1.8V), using `scripts/synthesize_rtl.py` / `synth_sky130.ys`.
+Results in `fpga/asic/results/synth_sky130.json`.
+
+**Important caveat**: yosys has no SRAM macro in the standard-cell liberty file, so
+`line_buffer`'s two 224-entry circular buffers are mapped to 3,600 `edfxtp_1`
+enable flip-flops (130,610 µm²).  On ECP5, these are inferred as two DP16KD BRAMs.
+With sky130 SRAM macros (e.g. `sky130_sram_1kbyte`) the line-buffer area would
+shrink by ~82% and total area would be roughly 132,000 µm².
+
 | Metric | Value |
 |---|---|
-| Standard cells | TBD |
-| Chip area (yosys estimate) | TBD µm² |
+| Standard cells (total) | 24,161 |
+| — dfxtp (plain FF) | 2,394 |
+| — edfxtp (enable FF, line buffer) | 3,600 |
+| Chip area | 262,986 µm² (0.263 mm²) |
+| Sequential area | 156,030 µm² (59.3%) |
+
+**Module area breakdown (yosys, sky130hd, synthesis only):**
+
+| Module | Area (µm²) | % total |
+|---|---|---|
+| `line_buffer` | 130,610 | 49.7% |
+| `wiener_filter` | 76,696 | 29.2% |
+| `adaptive_median_filter` | 22,973 | 8.7% |
+| `median_filter` | 13,982 | 5.3% |
+| `filter_controller` | 10,963 | 4.2% |
+| `window_gen` | 4,567 | 1.7% |
+| `gaussian_filter` | 2,823 | 1.1% |
+| `fpga_denoiser_top` (glue) | 372 | 0.1% |
+| **Total** | **262,986** | 100% |
 
 ### Floorplan
 
