@@ -47,14 +47,11 @@ write_db  $OUT_DIR/${TOP}_placed.odb
 puts "  Checkpoint: detailed placement written"
 
 # ── Clock tree synthesis ──────────────────────────────────────────────────────
+# Note: inside TCL {}, backslash is literal — keep buf_list on one logical line.
 clock_tree_synthesis \
-    -root_buf  "sky130_fd_sc_hd__buf_12" \
-    -buf_list  {"sky130_fd_sc_hd__buf_4" \
-                "sky130_fd_sc_hd__buf_8" \
-                "sky130_fd_sc_hd__buf_12"} \
+    -root_buf  sky130_fd_sc_hd__buf_12 \
+    -buf_list  {sky130_fd_sc_hd__buf_4 sky130_fd_sc_hd__buf_8 sky130_fd_sc_hd__buf_12} \
     -wire_unit 20
-
-repair_clock_skew
 
 # ── Post-CTS timing repair ────────────────────────────────────────────────────
 set_propagated_clock [all_clocks]

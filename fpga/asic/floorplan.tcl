@@ -32,10 +32,12 @@ read_verilog $NETLIST
 link_design  $TOP
 read_sdc     $SDC_FILE
 
-# ── Die and core (250×250 µm, 2 µm margin) ───────────────────────────────────
+# ── Die and core (1000×1000 µm, 10 µm margin → 980×980 µm core ≈ 45% util) ──
+# GPL-0301: 250×250 µm die yielded 707% utilisation; cell area ≈ 428 000 µm².
+# 980×980 µm core = 960 400 µm² → ≈ 45% utilisation at target density 0.60.
 initialize_floorplan \
-    -die_area  "0 0 250 250" \
-    -core_area "2 2 248 248" \
+    -die_area  "0 0 1000 1000" \
+    -core_area "10 10 990 990" \
     -site      unithd
 
 # Populate routing track database from the tech LEF (required before place_pins)
