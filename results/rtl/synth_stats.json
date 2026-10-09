@@ -1,0 +1,173 @@
+{
+   "creator": "Yosys 0.57+55 (git sha1 727998f66, x86_64-w64-mingw32-g++ 13.2.1 -O3)",
+   "invocation": "stat -json ",
+   "modules": {
+      "$paramod$5e09fab411d79dbdf3ad8b7ae6e3efe29c3ee388\\filter_controller": {
+         "num_wires":         84,
+         "num_wire_bits":     489,
+         "num_pub_wires":     75,
+         "num_pub_wire_bits": 480,
+         "num_ports":         9,
+         "num_port_bits":     104,
+         "num_memories":      0,
+         "num_memory_bits":   0,
+         "num_processes":     0,
+         "num_cells":         354,
+         "num_submodules":       4,
+         "num_cells_by_type": {
+            "$_SDFFE_PN0P_": 328,
+            "$_SDFF_PN0_": 1,
+            "$lut": 25,
+            "$paramod$6fe9edb097d8465c26c9fb95b2bfc2540ac5b793\\wiener_filter": 1,
+            "$paramod\\adaptive_median_filter\\DEPTH=s32'00000000000000000000000000001000": 1,
+            "$paramod\\gaussian_filter\\DEPTH=s32'00000000000000000000000000001000": 1,
+            "$paramod\\median_filter\\DEPTH=s32'00000000000000000000000000001000": 1
+         }
+      },
+      "$paramod$6fe9edb097d8465c26c9fb95b2bfc2540ac5b793\\wiener_filter": {
+         "num_wires":         2257,
+         "num_wire_bits":     5075,
+         "num_pub_wires":     144,
+         "num_pub_wire_bits": 2263,
+         "num_ports":         6,
+         "num_port_bits":     99,
+         "num_memories":      0,
+         "num_memory_bits":   0,
+         "num_processes":     0,
+         "num_cells":         3839,
+         "num_submodules":       0,
+         "num_cells_by_type": {
+            "$_SDFFE_PN0P_": 1169,
+            "$lut": 2670
+         }
+      },
+      "$paramod$83b50d6fce9d37e43df5a800677cc515d89fdaf1\\window_gen": {
+         "num_wires":         71,
+         "num_wire_bits":     390,
+         "num_pub_wires":     32,
+         "num_pub_wire_bits": 351,
+         "num_ports":         7,
+         "num_port_bits":     85,
+         "num_memories":      0,
+         "num_memory_bits":   0,
+         "num_processes":     0,
+         "num_cells":         209,
+         "num_submodules":       1,
+         "num_cells_by_type": {
+            "$_SDFFE_PN0P_": 97,
+            "$lut": 112,
+            "$paramod$f5c69267fcc78c4a9a9c059a162128b96feae0ed\\line_buffer": 1
+         }
+      },
+      "$paramod$f5c69267fcc78c4a9a9c059a162128b96feae0ed\\line_buffer": {
+         "num_wires":         1882,
+         "num_wire_bits":     5090,
+         "num_pub_wires":     457,
+         "num_pub_wire_bits": 3651,
+         "num_ports":         5,
+         "num_port_bits":     35,
+         "num_memories":      0,
+         "num_memory_bits":   0,
+         "num_processes":     0,
+         "num_cells":         5055,
+         "num_submodules":       0,
+         "num_cells_by_type": {
+            "$_DFFE_PP_": 3600,
+            "$_SDFFE_PN0P_": 8,
+            "$lut": 1447
+         }
+      },
+      "$paramod\\adaptive_median_filter\\DEPTH=s32'00000000000000000000000000001000": {
+         "num_wires":         389,
+         "num_wire_bits":     1335,
+         "num_pub_wires":     129,
+         "num_pub_wire_bits": 1075,
+         "num_ports":         5,
+         "num_port_bits":     83,
+         "num_memories":      0,
+         "num_memory_bits":   0,
+         "num_processes":     0,
+         "num_cells":         1076,
+         "num_submodules":       0,
+         "num_cells_by_type": {
+            "$_SDFFE_PN0P_": 488,
+            "$lut": 588
+         }
+      },
+      "$paramod\\gaussian_filter\\DEPTH=s32'00000000000000000000000000001000": {
+         "num_wires":         103,
+         "num_wire_bits":     304,
+         "num_pub_wires":     20,
+         "num_pub_wire_bits": 221,
+         "num_ports":         5,
+         "num_port_bits":     83,
+         "num_memories":      0,
+         "num_memory_bits":   0,
+         "num_processes":     0,
+         "num_cells":         151,
+         "num_submodules":       0,
+         "num_cells_by_type": {
+            "$_SDFFE_PN0P_": 30,
+            "$lut": 121
+         }
+      },
+      "$paramod\\median_filter\\DEPTH=s32'00000000000000000000000000001000": {
+         "num_wires":         247,
+         "num_wire_bits":     885,
+         "num_pub_wires":     85,
+         "num_pub_wire_bits": 723,
+         "num_ports":         5,
+         "num_port_bits":     83,
+         "num_memories":      0,
+         "num_memory_bits":   0,
+         "num_processes":     0,
+         "num_cells":         634,
+         "num_submodules":       0,
+         "num_cells_by_type": {
+            "$_SDFFE_PN0P_": 264,
+            "$lut": 370
+         }
+      },
+      "\\fpga_denoiser_top": {
+         "num_wires":         24,
+         "num_wire_bits":     147,
+         "num_pub_wires":     17,
+         "num_pub_wire_bits": 126,
+         "num_ports":         12,
+         "num_port_bits":     43,
+         "num_memories":      0,
+         "num_memory_bits":   0,
+         "num_processes":     0,
+         "num_cells":         24,
+         "num_submodules":       2,
+         "num_cells_by_type": {
+            "$_SDFFE_PN0P_": 9,
+            "$lut": 15,
+            "$paramod$5e09fab411d79dbdf3ad8b7ae6e3efe29c3ee388\\filter_controller": 1,
+            "$paramod$83b50d6fce9d37e43df5a800677cc515d89fdaf1\\window_gen": 1
+         }
+      }
+   },
+      "design": {
+         "num_wires":         5057,
+         "num_wire_bits":     13715,
+         "num_pub_wires":     959,
+         "num_pub_wire_bits": 8890,
+         "num_ports":         54,
+         "num_port_bits":     615,
+         "num_memories":      0,
+         "num_memory_bits":   0,
+         "num_processes":     0,
+         "num_cells":         11342,
+         "num_submodules":       2,
+         "num_cells_by_type": {
+            "$_DFFE_PP_": 3600,
+            "$_SDFFE_PN0P_": 2393,
+            "$_SDFF_PN0_": 1,
+            "$lut": 5348,
+            "$paramod$5e09fab411d79dbdf3ad8b7ae6e3efe29c3ee388\\filter_controller": 1,
+            "$paramod$83b50d6fce9d37e43df5a800677cc515d89fdaf1\\window_gen": 1
+         }
+      }
+}
+
