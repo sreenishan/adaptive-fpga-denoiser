@@ -34,6 +34,7 @@ results/rtl/**
 !results/rtl/cosim_224x224.json
 !results/rtl/synth_stats.json
 !results/rtl/synth_ecp5.json
+!results/rtl/pnr_ecp5.json
 results/hardware/**
 # Re-include directories so git can descend into them and find the keep-files
 # below; without this, a nested .gitkeep stays invisible.

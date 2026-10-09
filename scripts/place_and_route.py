@@ -79,12 +79,12 @@ def run_synth(out: Path) -> tuple[str, dict]:
         errors = "\n".join(re.findall(r"^ERROR.*", log, re.M)) or log[-3000:]
         raise SystemExit(f"yosys synth_ecp5 failed:\n{errors}")
 
-    # Extract utilisation counts from yosys log
+    # Extract utilisation counts from yosys log (ECP5 cell names)
     util: dict[str, int] = {}
     for pattern, key in (
-        (r"LUT4\s+(\d+)", "lut4"),
+        (r"TRELLIS_COMB\s+(\d+)", "lut4"),
         (r"TRELLIS_FF\s+(\d+)", "ff"),
-        (r"TRELLIS_BRAM\s+(\d+)", "bram18"),
+        (r"DP16KD\s+(\d+)", "bram18"),
         (r"TRELLIS_DPR16X4\s+(\d+)", "lutram"),
         (r"MULT18X18D\s+(\d+)", "dsp"),
     ):
@@ -113,6 +113,7 @@ def run_nextpnr(netlist: str, out: Path, freq: float, package: str, seed: int) -
         "--freq", str(freq),
         "--seed", str(seed),
         "--write", str(out / "pnr_ecp5.json"),
+        "--textcfg", str(out / "pnr_ecp5.config"),
         "--report", str(report),
         "--routed-svg", str(out / "pnr_ecp5.svg"),
         "--log", str(out / "pnr_ecp5.log"),
@@ -144,16 +145,27 @@ def run_nextpnr(netlist: str, out: Path, freq: float, package: str, seed: int) -
     timing["fmax_mhz"] = float(fmax_m.group(1)) if fmax_m else None
     timing["wns_ns"]   = float(wns_m.group(1))  if wns_m  else None
 
-    return timing
+    # Extract utilisation from nextpnr report (authoritative; overrides yosys log)
+    pnr_util: dict[str, int] = {}
+    if "utilization" in timing:
+        u = timing["utilization"]
+        pnr_util = {
+            "lut4":   u.get("TRELLIS_COMB",  {}).get("used", 0),
+            "ff":     u.get("TRELLIS_FF",    {}).get("used", 0),
+            "bram18": u.get("DP16KD",        {}).get("used", 0),
+            "dsp":    u.get("MULT18X18D",    {}).get("used", 0),
+        }
+
+    return timing, pnr_util
 
 
 # ── pack bitstream (ecppack) ──────────────────────────────────────────────────
 
 def run_ecppack(out: Path) -> None:
     ecppack, env = _find("ecppack")
-    pnr_json = out / "pnr_ecp5.json"
-    bit_out  = out / "fpga_denoiser_top.bit"
-    proc = subprocess.run([ecppack, "--input", str(pnr_json), "--bit", str(bit_out)],
+    pnr_config = out / "pnr_ecp5.config"
+    bit_out    = out / "fpga_denoiser_top.bit"
+    proc = subprocess.run([ecppack, "--input", str(pnr_config), "--bit", str(bit_out)],
                           cwd=ROOT, env=env, capture_output=True, text=True)
     log = proc.stdout + proc.stderr
     (out / "ecppack.log").write_text(log, encoding="utf-8")
@@ -208,7 +220,9 @@ def main() -> int:
     netlist, util = run_synth(out)
 
     print(f"[2/3] nextpnr-ecp5 (target {args.freq} MHz, seed {args.seed}) ...")
-    timing = run_nextpnr(netlist, out, args.freq, args.package, args.seed)
+    timing, pnr_util = run_nextpnr(netlist, out, args.freq, args.package, args.seed)
+    if pnr_util:
+        util.update(pnr_util)
 
     print(f"[3/3] ecppack ...")
     run_ecppack(out)

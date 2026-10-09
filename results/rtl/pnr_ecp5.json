@@ -1,0 +1,21 @@
+{
+  "device": "LFE5U-25F-CABGA381",
+  "freq_target_mhz": 100.0,
+  "utilisation": {
+    "lut4": 2227,
+    "ff": 2049,
+    "bram18": 2,
+    "lutram": 0,
+    "dsp": 17
+  },
+  "timing": {
+    "fmax_mhz": 115.09,
+    "wns_ns": null,
+    "fmax": {
+      "$glbnet$clk$TRELLIS_IO_IN": {
+        "achieved": 113.84,
+        "constraint": 100
+      }
+    }
+  }
+}
