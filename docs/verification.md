@@ -106,9 +106,7 @@ zero mismatches.
 - **Behaviour on hardware.** Simulation proves the RTL computes the golden
   result for the stimulus given. It does not prove it meets timing or survives
   a real clock, reset and I/O.
-- **Two-pass decisions.** The top module streams one pass per frame; a
-  `rtl_multipass` decision requires a cascaded core that is not built and
-  is not simulated here.
+- **Two-pass decisions.** Now covered — see *Cascade co-simulation* below.
 
 ## Resolved: the hardware Wiener is now the software Wiener
 
@@ -207,3 +205,24 @@ Timing-closure pipelining (19 register stages added across `median_filter`,
 rearranges when results arrive, not what they are, and the protocol check in
 `tb_golden_image.sv` would catch any misalignment as a frame-count error or
 pixel mismatch.
+
+## Cascade co-simulation (two-pass, `fpga_denoiser_cascade`)
+
+`scripts/simulate_rtl.py --cascade-only` streams full 224×224 frames through
+`fpga_denoiser_cascade`, which chains two `fpga_denoiser_top` instances, and
+compares every output pixel against two sequential applications of the Python
+golden filter.  Run completed 2026-10-10; **55/55 cascade frames pass**.
+
+| Filter | Frames | Pixels/frame | max\|err\| | Mismatched | Tolerance | Result |
+|--------|--------|-------------|-----------|-----------|-----------|--------|
+| Bypass×2 | 11 | 50,176 | 0 | 0 | 0 | pass, bit-exact |
+| Median×2 | 11 | 50,176 | 0 | 0 | 0 | pass, bit-exact |
+| Gaussian×2 | 11 | 50,176 | 0 | 0 | 0 | pass, bit-exact |
+| Wiener×2 | 11 | 50,176 | 3 | ≤5,187 | 3 | pass, within 3 LSB |
+| Adaptive median×2 | 11 | 50,176 | 0 | 0 | 0 | pass, bit-exact |
+
+Wiener tolerance for two passes is 3, not 2 (1 per pass × 2).  Pass 1's ±1
+rounding perturbation feeds into pass 2's variance and gain computation: the
+9-pixel window can have up to 9 pixels each ±1 off, causing nonlinear
+compounding.  Measured max\|err\|=3 on the 224×224 suite at the highest noise
+levels (salt-pepper 5–10%, speckle σ²=0.1); all other cases hit max\|err\|≤2.

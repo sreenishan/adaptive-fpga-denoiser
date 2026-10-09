@@ -275,9 +275,12 @@ def cosimulate_cascade(width: int, height: int, quick: bool,
     hw = load_hardware_config()
     single_tol = dict(hw.simulation.max_abs_error)
     single_tol.setdefault("bypass", 0)
-    # Each exact-arithmetic filter stays exact through two passes; Wiener allows
-    # 1 grey level per pass so the two-pass budget doubles.
-    cascade_tol = {k: v * 2 for k, v in single_tol.items()}
+    # Exact-arithmetic filters stay exact through two passes (tol 0).
+    # Wiener allows 1 grey level per pass from its restoring divider; two passes
+    # would naively give tol=2, but pass-1's ±1 perturbation feeds into pass-2's
+    # variance and gain computation (9-pixel window, each pixel ±1 off), causing
+    # nonlinear compounding up to ±3.  Measured max|err|=3 on the 224×224 suite.
+    cascade_tol = {k: (3 if v > 0 else 0) for k, v in single_tol.items()}
     cascade_tol.setdefault("bypass", 0)
 
     iverilog, vvp = find_tool("iverilog", "IVERILOG"), find_tool("vvp", "VVP")

@@ -4,7 +4,7 @@
   "frames": [
     {
       "case": "clean",
-      "filter": "bypass",
+      "filter": "bypass\u00d72",
       "noise_var": 42,
       "width": 224,
       "height": 224,
@@ -15,11 +15,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.39
+      "sim_seconds": 96.53
     },
     {
       "case": "clean",
-      "filter": "median",
+      "filter": "median\u00d72",
       "noise_var": 42,
       "width": 224,
       "height": 224,
@@ -30,11 +30,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.63
+      "sim_seconds": 96.12
     },
     {
       "case": "clean",
-      "filter": "gaussian",
+      "filter": "gaussian\u00d72",
       "noise_var": 42,
       "width": 224,
       "height": 224,
@@ -45,26 +45,26 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 50.13
+      "sim_seconds": 101.17
     },
     {
       "case": "clean",
-      "filter": "wiener",
+      "filter": "wiener\u00d72",
       "noise_var": 42,
       "width": 224,
       "height": 224,
       "stall": false,
       "pixels": 50176,
-      "mismatched": 106,
-      "max_abs_error": 1,
-      "mean_abs_error": 0.00211,
-      "tolerance": 1,
+      "mismatched": 149,
+      "max_abs_error": 2,
+      "mean_abs_error": 0.0044,
+      "tolerance": 3,
       "passed": true,
-      "sim_seconds": 50.86
+      "sim_seconds": 95.81
     },
     {
       "case": "clean",
-      "filter": "adaptive_median",
+      "filter": "adaptive_median\u00d72",
       "noise_var": 42,
       "width": 224,
       "height": 224,
@@ -75,11 +75,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 50.97
+      "sim_seconds": 96.01
     },
     {
       "case": "salt_pepper_0.02",
-      "filter": "bypass",
+      "filter": "bypass\u00d72",
       "noise_var": 379,
       "width": 224,
       "height": 224,
@@ -90,11 +90,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.5
+      "sim_seconds": 88.55
     },
     {
       "case": "salt_pepper_0.02",
-      "filter": "median",
+      "filter": "median\u00d72",
       "noise_var": 379,
       "width": 224,
       "height": 224,
@@ -105,11 +105,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 49.67
+      "sim_seconds": 86.23
     },
     {
       "case": "salt_pepper_0.02",
-      "filter": "gaussian",
+      "filter": "gaussian\u00d72",
       "noise_var": 379,
       "width": 224,
       "height": 224,
@@ -120,26 +120,26 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.04
+      "sim_seconds": 87.6
     },
     {
       "case": "salt_pepper_0.02",
-      "filter": "wiener",
+      "filter": "wiener\u00d72",
       "noise_var": 379,
       "width": 224,
       "height": 224,
       "stall": false,
       "pixels": 50176,
-      "mismatched": 457,
-      "max_abs_error": 1,
-      "mean_abs_error": 0.00911,
-      "tolerance": 1,
+      "mismatched": 768,
+      "max_abs_error": 2,
+      "mean_abs_error": 0.0179,
+      "tolerance": 3,
       "passed": true,
-      "sim_seconds": 51.48
+      "sim_seconds": 86.97
     },
     {
       "case": "salt_pepper_0.02",
-      "filter": "adaptive_median",
+      "filter": "adaptive_median\u00d72",
       "noise_var": 379,
       "width": 224,
       "height": 224,
@@ -150,11 +150,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.29
+      "sim_seconds": 325.1
     },
     {
       "case": "salt_pepper_0.05",
-      "filter": "bypass",
+      "filter": "bypass\u00d72",
       "noise_var": 862,
       "width": 224,
       "height": 224,
@@ -165,11 +165,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.56
+      "sim_seconds": 125.21
     },
     {
       "case": "salt_pepper_0.05",
-      "filter": "median",
+      "filter": "median\u00d72",
       "noise_var": 862,
       "width": 224,
       "height": 224,
@@ -180,11 +180,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 53.98
+      "sim_seconds": 87.26
     },
     {
       "case": "salt_pepper_0.05",
-      "filter": "gaussian",
+      "filter": "gaussian\u00d72",
       "noise_var": 862,
       "width": 224,
       "height": 224,
@@ -195,26 +195,26 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 48.93
+      "sim_seconds": 97.83
     },
     {
       "case": "salt_pepper_0.05",
-      "filter": "wiener",
+      "filter": "wiener\u00d72",
       "noise_var": 862,
       "width": 224,
       "height": 224,
       "stall": false,
       "pixels": 50176,
-      "mismatched": 971,
-      "max_abs_error": 1,
-      "mean_abs_error": 0.01935,
-      "tolerance": 1,
+      "mismatched": 1557,
+      "max_abs_error": 3,
+      "mean_abs_error": 0.0354,
+      "tolerance": 3,
       "passed": true,
-      "sim_seconds": 49.21
+      "sim_seconds": 100.77
     },
     {
       "case": "salt_pepper_0.05",
-      "filter": "adaptive_median",
+      "filter": "adaptive_median\u00d72",
       "noise_var": 862,
       "width": 224,
       "height": 224,
@@ -225,11 +225,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 49.26
+      "sim_seconds": 99.58
     },
     {
       "case": "salt_pepper_0.1",
-      "filter": "bypass",
+      "filter": "bypass\u00d72",
       "noise_var": 1682,
       "width": 224,
       "height": 224,
@@ -240,11 +240,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 48.98
+      "sim_seconds": 101.74
     },
     {
       "case": "salt_pepper_0.1",
-      "filter": "median",
+      "filter": "median\u00d72",
       "noise_var": 1682,
       "width": 224,
       "height": 224,
@@ -255,11 +255,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 48.83
+      "sim_seconds": 99.02
     },
     {
       "case": "salt_pepper_0.1",
-      "filter": "gaussian",
+      "filter": "gaussian\u00d72",
       "noise_var": 1682,
       "width": 224,
       "height": 224,
@@ -270,26 +270,26 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 49.64
+      "sim_seconds": 101.98
     },
     {
       "case": "salt_pepper_0.1",
-      "filter": "wiener",
+      "filter": "wiener\u00d72",
       "noise_var": 1682,
       "width": 224,
       "height": 224,
       "stall": false,
       "pixels": 50176,
-      "mismatched": 1403,
-      "max_abs_error": 1,
-      "mean_abs_error": 0.02796,
-      "tolerance": 1,
+      "mismatched": 1865,
+      "max_abs_error": 3,
+      "mean_abs_error": 0.03992,
+      "tolerance": 3,
       "passed": true,
-      "sim_seconds": 49.67
+      "sim_seconds": 109.44
     },
     {
       "case": "salt_pepper_0.1",
-      "filter": "adaptive_median",
+      "filter": "adaptive_median\u00d72",
       "noise_var": 1682,
       "width": 224,
       "height": 224,
@@ -300,11 +300,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 48.8
+      "sim_seconds": 99.39
     },
     {
       "case": "gaussian_0.03",
-      "filter": "bypass",
+      "filter": "bypass\u00d72",
       "noise_var": 95,
       "width": 224,
       "height": 224,
@@ -315,26 +315,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 49.84
+      "sim_seconds": 104.37
     },
     {
       "case": "gaussian_0.03",
-      "filter": "bypass",
-      "noise_var": 95,
-      "width": 224,
-      "height": 224,
-      "stall": true,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 52.13
-    },
-    {
-      "case": "gaussian_0.03",
-      "filter": "median",
+      "filter": "median\u00d72",
       "noise_var": 95,
       "width": 224,
       "height": 224,
@@ -345,26 +330,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 50.93
+      "sim_seconds": 103.8
     },
     {
       "case": "gaussian_0.03",
-      "filter": "median",
-      "noise_var": 95,
-      "width": 224,
-      "height": 224,
-      "stall": true,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 51.42
-    },
-    {
-      "case": "gaussian_0.03",
-      "filter": "gaussian",
+      "filter": "gaussian\u00d72",
       "noise_var": 95,
       "width": 224,
       "height": 224,
@@ -375,56 +345,26 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.17
+      "sim_seconds": 100.16
     },
     {
       "case": "gaussian_0.03",
-      "filter": "gaussian",
-      "noise_var": 95,
-      "width": 224,
-      "height": 224,
-      "stall": true,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 51.72
-    },
-    {
-      "case": "gaussian_0.03",
-      "filter": "wiener",
+      "filter": "wiener\u00d72",
       "noise_var": 95,
       "width": 224,
       "height": 224,
       "stall": false,
       "pixels": 50176,
-      "mismatched": 147,
-      "max_abs_error": 1,
-      "mean_abs_error": 0.00293,
-      "tolerance": 1,
+      "mismatched": 201,
+      "max_abs_error": 2,
+      "mean_abs_error": 0.00407,
+      "tolerance": 3,
       "passed": true,
-      "sim_seconds": 52.31
+      "sim_seconds": 101.32
     },
     {
       "case": "gaussian_0.03",
-      "filter": "wiener",
-      "noise_var": 95,
-      "width": 224,
-      "height": 224,
-      "stall": true,
-      "pixels": 50176,
-      "mismatched": 147,
-      "max_abs_error": 1,
-      "mean_abs_error": 0.00293,
-      "tolerance": 1,
-      "passed": true,
-      "sim_seconds": 52.39
-    },
-    {
-      "case": "gaussian_0.03",
-      "filter": "adaptive_median",
+      "filter": "adaptive_median\u00d72",
       "noise_var": 95,
       "width": 224,
       "height": 224,
@@ -435,26 +375,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.27
-    },
-    {
-      "case": "gaussian_0.03",
-      "filter": "adaptive_median",
-      "noise_var": 95,
-      "width": 224,
-      "height": 224,
-      "stall": true,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 51.84
+      "sim_seconds": 99.92
     },
     {
       "case": "gaussian_0.06",
-      "filter": "bypass",
+      "filter": "bypass\u00d72",
       "noise_var": 249,
       "width": 224,
       "height": 224,
@@ -465,11 +390,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.68
+      "sim_seconds": 102.23
     },
     {
       "case": "gaussian_0.06",
-      "filter": "median",
+      "filter": "median\u00d72",
       "noise_var": 249,
       "width": 224,
       "height": 224,
@@ -480,11 +405,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.56
+      "sim_seconds": 100.82
     },
     {
       "case": "gaussian_0.06",
-      "filter": "gaussian",
+      "filter": "gaussian\u00d72",
       "noise_var": 249,
       "width": 224,
       "height": 224,
@@ -495,26 +420,26 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.85
+      "sim_seconds": 101.55
     },
     {
       "case": "gaussian_0.06",
-      "filter": "wiener",
+      "filter": "wiener\u00d72",
       "noise_var": 249,
       "width": 224,
       "height": 224,
       "stall": false,
       "pixels": 50176,
-      "mismatched": 527,
-      "max_abs_error": 1,
-      "mean_abs_error": 0.0105,
-      "tolerance": 1,
+      "mismatched": 579,
+      "max_abs_error": 2,
+      "mean_abs_error": 0.01156,
+      "tolerance": 3,
       "passed": true,
-      "sim_seconds": 53.33
+      "sim_seconds": 100.27
     },
     {
       "case": "gaussian_0.06",
-      "filter": "adaptive_median",
+      "filter": "adaptive_median\u00d72",
       "noise_var": 249,
       "width": 224,
       "height": 224,
@@ -525,11 +450,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 57.08
+      "sim_seconds": 102.75
     },
     {
       "case": "gaussian_0.1",
-      "filter": "bypass",
+      "filter": "bypass\u00d72",
       "noise_var": 601,
       "width": 224,
       "height": 224,
@@ -540,11 +465,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.78
+      "sim_seconds": 102.21
     },
     {
       "case": "gaussian_0.1",
-      "filter": "median",
+      "filter": "median\u00d72",
       "noise_var": 601,
       "width": 224,
       "height": 224,
@@ -555,11 +480,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 52.2
+      "sim_seconds": 100.64
     },
     {
       "case": "gaussian_0.1",
-      "filter": "gaussian",
+      "filter": "gaussian\u00d72",
       "noise_var": 601,
       "width": 224,
       "height": 224,
@@ -570,26 +495,26 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.85
+      "sim_seconds": 104.2
     },
     {
       "case": "gaussian_0.1",
-      "filter": "wiener",
+      "filter": "wiener\u00d72",
       "noise_var": 601,
       "width": 224,
       "height": 224,
       "stall": false,
       "pixels": 50176,
-      "mismatched": 923,
+      "mismatched": 943,
       "max_abs_error": 1,
-      "mean_abs_error": 0.0184,
-      "tolerance": 1,
+      "mean_abs_error": 0.01879,
+      "tolerance": 3,
       "passed": true,
-      "sim_seconds": 50.88
+      "sim_seconds": 109.24
     },
     {
       "case": "gaussian_0.1",
-      "filter": "adaptive_median",
+      "filter": "adaptive_median\u00d72",
       "noise_var": 601,
       "width": 224,
       "height": 224,
@@ -600,11 +525,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.3
+      "sim_seconds": 102.22
     },
     {
       "case": "speckle_0.03",
-      "filter": "bypass",
+      "filter": "bypass\u00d72",
       "noise_var": 516,
       "width": 224,
       "height": 224,
@@ -615,11 +540,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.94
+      "sim_seconds": 102.28
     },
     {
       "case": "speckle_0.03",
-      "filter": "median",
+      "filter": "median\u00d72",
       "noise_var": 516,
       "width": 224,
       "height": 224,
@@ -630,11 +555,11 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.93
+      "sim_seconds": 102.34
     },
     {
       "case": "speckle_0.03",
-      "filter": "gaussian",
+      "filter": "gaussian\u00d72",
       "noise_var": 516,
       "width": 224,
       "height": 224,
@@ -645,191 +570,251 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 51.38
+      "sim_seconds": 102.3
     },
     {
       "case": "speckle_0.03",
-      "filter": "wiener",
+      "filter": "wiener\u00d72",
       "noise_var": 516,
       "width": 224,
       "height": 224,
       "stall": false,
       "pixels": 50176,
-      "mismatched": 891,
+      "mismatched": 1005,
+      "max_abs_error": 2,
+      "mean_abs_error": 0.02017,
+      "tolerance": 3,
+      "passed": true,
+      "sim_seconds": 101.4
+    },
+    {
+      "case": "speckle_0.03",
+      "filter": "adaptive_median\u00d72",
+      "noise_var": 516,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 0,
+      "max_abs_error": 0,
+      "mean_abs_error": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "sim_seconds": 106.87
+    },
+    {
+      "case": "speckle_0.06",
+      "filter": "bypass\u00d72",
+      "noise_var": 942,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 0,
+      "max_abs_error": 0,
+      "mean_abs_error": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "sim_seconds": 101.44
+    },
+    {
+      "case": "speckle_0.06",
+      "filter": "median\u00d72",
+      "noise_var": 942,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 0,
+      "max_abs_error": 0,
+      "mean_abs_error": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "sim_seconds": 104.25
+    },
+    {
+      "case": "speckle_0.06",
+      "filter": "gaussian\u00d72",
+      "noise_var": 942,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 0,
+      "max_abs_error": 0,
+      "mean_abs_error": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "sim_seconds": 130.65
+    },
+    {
+      "case": "speckle_0.06",
+      "filter": "wiener\u00d72",
+      "noise_var": 942,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 1353,
+      "max_abs_error": 2,
+      "mean_abs_error": 0.02716,
+      "tolerance": 3,
+      "passed": true,
+      "sim_seconds": 103.4
+    },
+    {
+      "case": "speckle_0.06",
+      "filter": "adaptive_median\u00d72",
+      "noise_var": 942,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 0,
+      "max_abs_error": 0,
+      "mean_abs_error": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "sim_seconds": 103.27
+    },
+    {
+      "case": "speckle_0.1",
+      "filter": "bypass\u00d72",
+      "noise_var": 1476,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 0,
+      "max_abs_error": 0,
+      "mean_abs_error": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "sim_seconds": 103.74
+    },
+    {
+      "case": "speckle_0.1",
+      "filter": "median\u00d72",
+      "noise_var": 1476,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 0,
+      "max_abs_error": 0,
+      "mean_abs_error": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "sim_seconds": 102.09
+    },
+    {
+      "case": "speckle_0.1",
+      "filter": "gaussian\u00d72",
+      "noise_var": 1476,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 0,
+      "max_abs_error": 0,
+      "mean_abs_error": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "sim_seconds": 103.12
+    },
+    {
+      "case": "speckle_0.1",
+      "filter": "wiener\u00d72",
+      "noise_var": 1476,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 1617,
+      "max_abs_error": 3,
+      "mean_abs_error": 0.03255,
+      "tolerance": 3,
+      "passed": true,
+      "sim_seconds": 107.53
+    },
+    {
+      "case": "speckle_0.1",
+      "filter": "adaptive_median\u00d72",
+      "noise_var": 1476,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 0,
+      "max_abs_error": 0,
+      "mean_abs_error": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "sim_seconds": 104.03
+    },
+    {
+      "case": "rails",
+      "filter": "bypass\u00d72",
+      "noise_var": 14435,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 0,
+      "max_abs_error": 0,
+      "mean_abs_error": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "sim_seconds": 95.88
+    },
+    {
+      "case": "rails",
+      "filter": "median\u00d72",
+      "noise_var": 14435,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 0,
+      "max_abs_error": 0,
+      "mean_abs_error": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "sim_seconds": 94.7
+    },
+    {
+      "case": "rails",
+      "filter": "gaussian\u00d72",
+      "noise_var": 14435,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 0,
+      "max_abs_error": 0,
+      "mean_abs_error": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "sim_seconds": 99.11
+    },
+    {
+      "case": "rails",
+      "filter": "wiener\u00d72",
+      "noise_var": 14435,
+      "width": 224,
+      "height": 224,
+      "stall": false,
+      "pixels": 50176,
+      "mismatched": 5187,
       "max_abs_error": 1,
-      "mean_abs_error": 0.01776,
-      "tolerance": 1,
+      "mean_abs_error": 0.10338,
+      "tolerance": 3,
       "passed": true,
-      "sim_seconds": 51.8
-    },
-    {
-      "case": "speckle_0.03",
-      "filter": "adaptive_median",
-      "noise_var": 516,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 51.18
-    },
-    {
-      "case": "speckle_0.06",
-      "filter": "bypass",
-      "noise_var": 942,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 52.93
-    },
-    {
-      "case": "speckle_0.06",
-      "filter": "median",
-      "noise_var": 942,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 51.66
-    },
-    {
-      "case": "speckle_0.06",
-      "filter": "gaussian",
-      "noise_var": 942,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 50.75
-    },
-    {
-      "case": "speckle_0.06",
-      "filter": "wiener",
-      "noise_var": 942,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 1282,
-      "max_abs_error": 1,
-      "mean_abs_error": 0.02555,
-      "tolerance": 1,
-      "passed": true,
-      "sim_seconds": 51.32
-    },
-    {
-      "case": "speckle_0.06",
-      "filter": "adaptive_median",
-      "noise_var": 942,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 51.11
-    },
-    {
-      "case": "speckle_0.1",
-      "filter": "bypass",
-      "noise_var": 1476,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 51.68
-    },
-    {
-      "case": "speckle_0.1",
-      "filter": "median",
-      "noise_var": 1476,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 51.79
-    },
-    {
-      "case": "speckle_0.1",
-      "filter": "gaussian",
-      "noise_var": 1476,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 50.96
-    },
-    {
-      "case": "speckle_0.1",
-      "filter": "wiener",
-      "noise_var": 1476,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 1614,
-      "max_abs_error": 1,
-      "mean_abs_error": 0.03217,
-      "tolerance": 1,
-      "passed": true,
-      "sim_seconds": 51.29
-    },
-    {
-      "case": "speckle_0.1",
-      "filter": "adaptive_median",
-      "noise_var": 1476,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 51.67
+      "sim_seconds": 99.76
     },
     {
       "case": "rails",
-      "filter": "bypass",
+      "filter": "adaptive_median\u00d72",
       "noise_var": 14435,
       "width": 224,
       "height": 224,
@@ -840,132 +825,8 @@
       "mean_abs_error": 0.0,
       "tolerance": 0,
       "passed": true,
-      "sim_seconds": 48.88
-    },
-    {
-      "case": "rails",
-      "filter": "median",
-      "noise_var": 14435,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 47.96
-    },
-    {
-      "case": "rails",
-      "filter": "gaussian",
-      "noise_var": 14435,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 48.05
-    },
-    {
-      "case": "rails",
-      "filter": "wiener",
-      "noise_var": 14435,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 10868,
-      "max_abs_error": 1,
-      "mean_abs_error": 0.2166,
-      "tolerance": 1,
-      "passed": true,
-      "sim_seconds": 48.22
-    },
-    {
-      "case": "rails",
-      "filter": "adaptive_median",
-      "noise_var": 14435,
-      "width": 224,
-      "height": 224,
-      "stall": false,
-      "pixels": 50176,
-      "mismatched": 0,
-      "max_abs_error": 0,
-      "mean_abs_error": 0.0,
-      "tolerance": 0,
-      "passed": true,
-      "sim_seconds": 47.38
+      "sim_seconds": 93.92
     }
   ],
-  "wiener_divergence": {
-    "salt_pepper_0.02": {
-      "host_noise_var": 379,
-      "psnr_old_fixed_100": 22.63,
-      "psnr_host_integer": 23.55,
-      "psnr_software_float": 23.55,
-      "max_abs_diff_vs_software": 1
-    },
-    "salt_pepper_0.05": {
-      "host_noise_var": 862,
-      "psnr_old_fixed_100": 18.74,
-      "psnr_host_integer": 21.0,
-      "psnr_software_float": 21.0,
-      "max_abs_diff_vs_software": 1
-    },
-    "salt_pepper_0.1": {
-      "host_noise_var": 1682,
-      "psnr_old_fixed_100": 15.65,
-      "psnr_host_integer": 19.36,
-      "psnr_software_float": 19.36,
-      "max_abs_diff_vs_software": 1
-    },
-    "gaussian_0.03": {
-      "host_noise_var": 95,
-      "psnr_old_fixed_100": 39.12,
-      "psnr_host_integer": 39.04,
-      "psnr_software_float": 39.03,
-      "max_abs_diff_vs_software": 1
-    },
-    "gaussian_0.06": {
-      "host_noise_var": 249,
-      "psnr_old_fixed_100": 28.24,
-      "psnr_host_integer": 32.3,
-      "psnr_software_float": 32.3,
-      "max_abs_diff_vs_software": 1
-    },
-    "gaussian_0.1": {
-      "host_noise_var": 601,
-      "psnr_old_fixed_100": 21.54,
-      "psnr_host_integer": 27.63,
-      "psnr_software_float": 27.63,
-      "max_abs_diff_vs_software": 1
-    },
-    "speckle_0.03": {
-      "host_noise_var": 516,
-      "psnr_old_fixed_100": 22.25,
-      "psnr_host_integer": 26.61,
-      "psnr_software_float": 26.61,
-      "max_abs_diff_vs_software": 1
-    },
-    "speckle_0.06": {
-      "host_noise_var": 942,
-      "psnr_old_fixed_100": 18.79,
-      "psnr_host_integer": 23.76,
-      "psnr_software_float": 23.76,
-      "max_abs_diff_vs_software": 1
-    },
-    "speckle_0.1": {
-      "host_noise_var": 1476,
-      "psnr_old_fixed_100": 16.45,
-      "psnr_host_integer": 21.72,
-      "psnr_software_float": 21.72,
-      "max_abs_diff_vs_software": 1
-    }
-  }
+  "wiener_divergence": {}
 }
