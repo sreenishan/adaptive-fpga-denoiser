@@ -23,8 +23,8 @@ module tb_fpga_denoiser_cascade;
     // Must match fpga_denoiser_cascade PIPE_STAGES
     localparam int PIPE_STAGES    = 18;
     localparam int SINGLE_FLUSH   = W + 2 + PIPE_STAGES;
-    // +1 gap cycle: prevents p2_flush from overlapping pass-1's last m_valid
-    localparam int CASCADE_FLUSH  = 2 * SINGLE_FLUSH + 1;
+    // +3: gap(1) + 2 extra cycles pass 2 needs — see fpga_denoiser_cascade.sv.
+    localparam int CASCADE_FLUSH  = 2 * SINGLE_FLUSH + 3;
 
     // ── DUT ────────────────────────────────────────────────────────────────────
     logic              clk, rst_n;

@@ -74,7 +74,8 @@ def host_noise_var(image: np.ndarray) -> int:
     """
     return int(min(max(round(estimate_noise_variance(image)), 0), NV_MAX))
 
-BENCH = ["rtl/tb/tb_golden_image.sv"]
+BENCH          = ["rtl/tb/tb_golden_image.sv"]
+BENCH_CASCADE  = ["rtl/tb/tb_golden_image_cascade.sv"]
 RTL = [line.strip() for line in (ROOT / "rtl" / "filelist.f").read_text().splitlines()
        if line.strip() and not line.lstrip().startswith("//")]
 
@@ -118,6 +119,16 @@ def golden(image: np.ndarray, filter_name: str, noise_var: int) -> np.ndarray:
     raise ValueError(filter_name)
 
 
+def golden_cascade(image: np.ndarray, filter_name: str, noise_var: int) -> np.ndarray:
+    """Two sequential applications of the golden filter (the cascade's reference).
+
+    Pass 2 uses the same noise_var as pass 1: both RTL passes receive the same
+    noise_var port value, so the golden model must too.
+    """
+    once = golden(image, filter_name, noise_var)
+    return golden(once, filter_name, noise_var)
+
+
 def write_hex(path: Path, image: np.ndarray) -> None:
     path.write_text("\n".join(f"{v:02x}" for v in image.ravel()) + "\n", encoding="ascii")
 
@@ -137,6 +148,16 @@ def compile_bench(iverilog: str, width: int, height: int, out: Path) -> None:
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     if proc.returncode != 0:
         raise SystemExit(f"iverilog failed:\n{proc.stdout}{proc.stderr}")
+
+
+def compile_bench_cascade(iverilog: str, width: int, height: int, out: Path) -> None:
+    """Compile the cascade bench. Same invocation pattern as compile_bench."""
+    cmd = [iverilog, "-g2012", "-o", str(out),
+           f"-Ptb_golden_image_cascade.W={width}", f"-Ptb_golden_image_cascade.H={height}",
+           *RTL, *BENCH_CASCADE]
+    proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise SystemExit(f"iverilog (cascade) failed:\n{proc.stdout}{proc.stderr}")
 
 
 def build_cases(width: int, height: int, quick: bool) -> dict[str, np.ndarray]:
@@ -242,35 +263,119 @@ def cosimulate(width: int, height: int, quick: bool,
     return results, divergence
 
 
+def cosimulate_cascade(width: int, height: int, quick: bool,
+                       workdir: Path | None = None, log=print) -> list[FrameResult]:
+    """Stream each noisy test case through fpga_denoiser_cascade and compare
+    against two sequential applications of the Python golden filter.
+
+    Cascade tolerance is twice the single-pass Wiener budget (rounding can
+    accumulate across two passes), and zero for all exact-arithmetic filters.
+    Stall testing is omitted — it is already covered by the single-pass suite.
+    """
+    hw = load_hardware_config()
+    single_tol = dict(hw.simulation.max_abs_error)
+    single_tol.setdefault("bypass", 0)
+    # Each exact-arithmetic filter stays exact through two passes; Wiener allows
+    # 1 grey level per pass so the two-pass budget doubles.
+    cascade_tol = {k: v * 2 for k, v in single_tol.items()}
+    cascade_tol.setdefault("bypass", 0)
+
+    iverilog, vvp = find_tool("iverilog", "IVERILOG"), find_tool("vvp", "VVP")
+    dirs = {k: (workdir / k if workdir else getattr(hw.simulation, f"{k}_dir"))
+            for k in ("input", "expected", "output")}
+    for d in dirs.values():
+        d.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sim = Path(tmp) / f"cascade_{width}x{height}.vvp"
+        compile_bench_cascade(iverilog, width, height, sim)
+        cases = build_cases(width, height, quick)
+        # Cascade is most meaningful for the noisy images; skip edge-vector
+        # cases that are already proven by the single-pass suite.
+        cascade_cases = {k: v for k, v in cases.items()
+                         if k.startswith(("salt_pepper", "gaussian", "speckle", "clean", "rails"))}
+        results: list[FrameResult] = []
+        for case, image in cascade_cases.items():
+            in_hex = dirs["input"] / f"{case}_{width}x{height}.hex"
+            write_hex(in_hex, image)
+            noise_var = host_noise_var(image)
+            for name, code in CONTROL_CODE.items():
+                tag = f"cascade_{case}_{width}x{height}_{name}"
+                expect = golden_cascade(image, name, noise_var)
+                write_hex(dirs["expected"] / f"{tag}.hex", expect)
+                out_hex = dirs["output"] / f"{tag}.hex"
+                started = time.perf_counter()
+                proc = subprocess.run(
+                    [vvp, "-n", str(sim),
+                     f"+IN={in_hex.as_posix()}", f"+OUT={out_hex.as_posix()}",
+                     f"+SEL={code}", f"+NV={noise_var}"],
+                    cwd=ROOT, capture_output=True, text=True)
+                seconds = time.perf_counter() - started
+                if proc.returncode != 0:
+                    raise SystemExit(f"cascade sim failed for {tag}:\n{proc.stdout}{proc.stderr}")
+                got = read_hex(out_hex, image.shape)
+                diff = np.abs(got.astype(int) - expect.astype(int))
+                tol = cascade_tol[name]
+                r = FrameResult(case, f"{name}×2", noise_var, width, height, False,
+                                int(diff.size), int((diff > 0).sum()), int(diff.max()),
+                                round(float(diff.mean()), 5), tol,
+                                bool(diff.max() <= tol), round(seconds, 2))
+                results.append(r)
+                log(f"  {'PASS' if r.passed else 'FAIL'}  {tag:<48} nv {noise_var:>5}  "
+                    f"mismatched {r.mismatched:>6}/{r.pixels}  max|err| {r.max_abs_error}  "
+                    f"(tol {tol})  {seconds:5.1f}s")
+    return results
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--quick", action="store_true", help="31x17 frame, one level per noise")
     parser.add_argument("--width", type=int, default=None)
     parser.add_argument("--height", type=int, default=None)
+    parser.add_argument("--cascade", action="store_true",
+                        help="also run two-pass co-simulation through fpga_denoiser_cascade")
+    parser.add_argument("--cascade-only", action="store_true",
+                        help="run only the cascade co-simulation (skip single-pass)")
     args = parser.parse_args()
     hw = load_hardware_config()
-    width = args.width or (31 if args.quick else hw.stream.image_width)
-    height = args.height or (17 if args.quick else hw.stream.image_height)
+    width  = args.width  or (31  if args.quick else hw.stream.image_width)
+    height = args.height or (17  if args.quick else hw.stream.image_height)
 
-    print(f"Co-simulating fpga_denoiser_top at {width}x{height}; "
-          f"noise_var is sent per frame by the host")
-    results, divergence = cosimulate(width, height, args.quick)
-    failed = [r for r in results if not r.passed]
+    all_results: list[FrameResult] = []
+    divergence: dict = {}
 
-    print(f"\n{len(results) - len(failed)}/{len(results)} frames within tolerance")
-    print("\nWiener, PSNR vs clean — old compile-time 100 | host integer (now) | software float:")
-    for case, d in divergence.items():
-        print(f"  {case:<18} nv {d['host_noise_var']:>5}   "
-              f"{d['psnr_old_fixed_100']:6.2f} | {d['psnr_host_integer']:6.2f} | "
-              f"{d['psnr_software_float']:6.2f} dB    max pixel diff vs software "
-              f"{d['max_abs_diff_vs_software']}")
+    if not args.cascade_only:
+        print(f"Co-simulating fpga_denoiser_top at {width}x{height}; "
+              f"noise_var is sent per frame by the host")
+        results, divergence = cosimulate(width, height, args.quick)
+        all_results.extend(results)
+        failed_sp = [r for r in results if not r.passed]
+        print(f"\n{len(results) - len(failed_sp)}/{len(results)} single-pass frames within tolerance")
+        print("\nWiener, PSNR vs clean — old compile-time 100 | host integer (now) | software float:")
+        for case, d in divergence.items():
+            print(f"  {case:<18} nv {d['host_noise_var']:>5}   "
+                  f"{d['psnr_old_fixed_100']:6.2f} | {d['psnr_host_integer']:6.2f} | "
+                  f"{d['psnr_software_float']:6.2f} dB    max pixel diff vs software "
+                  f"{d['max_abs_diff_vs_software']}")
+
+    if args.cascade or args.cascade_only:
+        print(f"\nCo-simulating fpga_denoiser_cascade (two-pass) at {width}x{height}")
+        cascade_results = cosimulate_cascade(width, height, args.quick)
+        all_results.extend(cascade_results)
+        failed_c = [r for r in cascade_results if not r.passed]
+        print(f"\n{len(cascade_results) - len(failed_c)}/{len(cascade_results)} "
+              f"cascade frames within tolerance")
+
+    failed = [r for r in all_results if not r.passed]
 
     out = ROOT / "results" / "rtl" / f"cosim_{width}x{height}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"width": width, "height": height,
-                               "frames": [asdict(r) for r in results],
+                               "frames": [asdict(r) for r in all_results],
                                "wiener_divergence": divergence}, indent=2), encoding="utf-8")
     print(f"\nwrote {out.relative_to(ROOT)}")
+    if failed:
+        print(f"FAIL: {len(failed)} frame(s) outside tolerance")
     return 1 if failed else 0
 
 

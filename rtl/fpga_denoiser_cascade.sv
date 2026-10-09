@@ -53,11 +53,15 @@ module fpga_denoiser_cascade #(
     // Single-pass constants (must match fpga_denoiser_top)
     localparam int PIPE_STAGES    = 18;
     localparam int SINGLE_FLUSH   = IMG_WIDTH + 2 + PIPE_STAGES;
-    // Pass 1's last m_valid fires on the same posedge that flushcnt would reach
-    // SINGLE_FLUSH, so p2_flush must start one cycle later (at SINGLE_FLUSH+1)
+    // Pass 1's last m_valid fires on the same posedge that flushcnt reaches
+    // SINGLE_FLUSH-1, so p2_flush must start one cycle later (at SINGLE_FLUSH+1)
     // to avoid pass-2's window_gen seeing both s_valid and s_flush simultaneously.
-    // CASCADE_FLUSH = p1_flush(SINGLE_FLUSH) + gap(1) + p2_flush(SINGLE_FLUSH).
-    localparam int CASCADE_FLUSH  = 2 * SINGLE_FLUSH + 1;
+    // Pass 2 also produces 2 output pixels naturally before p2_flush starts
+    // (pixels that entered pass 2's pipeline early enough to exit without needing
+    // the flush signal), which means pass 2's window_gen needs 2 extra flush
+    // cycles to push through its last rows.
+    // CASCADE_FLUSH = p1_flush(SINGLE_FLUSH) + gap(1) + p2_flush(SINGLE_FLUSH+2).
+    localparam int CASCADE_FLUSH  = 2 * SINGLE_FLUSH + 3;
     localparam int FCW            = $clog2(CASCADE_FLUSH + 1);
 
     // ── Intermediate ──────────────────────────────────────────────────────────
