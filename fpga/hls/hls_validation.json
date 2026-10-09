@@ -1,0 +1,20 @@
+{
+  "hls_project": "fpga/hls/noise_classifier_hls",
+  "precision": "ap_fixed<16,6>",
+  "test_images": 585,
+  "load_errors": 0,
+  "elapsed_s": 29412.55,
+  "ms_per_image": 50277.86,
+  "hls_accuracy_pct": 92.31,
+  "pytorch_accuracy_pct": 90.43,
+  "hls_vs_pytorch_agreement_pct": 95.04,
+  "max_logit_diff": 2.2623,
+  "mean_logit_diff": 0.5468,
+  "per_class_hls_accuracy_pct": {
+    "clean": 100.0,
+    "salt_pepper": 100.0,
+    "gaussian": 91.9,
+    "speckle": 99.3,
+    "rician": 75.6
+  }
+}

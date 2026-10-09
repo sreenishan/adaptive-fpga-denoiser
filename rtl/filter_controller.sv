@@ -1,0 +1,320 @@
+// filter_controller.sv — Phase 19d (stage-2b-b split in median/adaptive_median)
+//
+// Routes a 3×3 window to one of five filter cores and muxes the output.
+//
+// filter_sel encoding (matches FILTER_FOR_CLASS / CONTROL_CODE in Python):
+//   3'b000 — bypass          (output = centre pixel, win[1][1])
+//   3'b001 — median
+//   3'b010 — gaussian
+//   3'b011 — wiener
+//   3'b100 — adaptive_median (Hwang-Haddad AMF, max_size=3)
+//   3'b101..111 — reserved (treated as bypass)
+//
+// Pipeline structure (total latency = DIV_STAGES + 9 = 19 cycles):
+//   Stage W   — win-input register: win_flat/filter_sel/valid_in → win_r/sel_wr/vld_wr
+//               (cuts the window_gen counter → filter accumulator path, ~33 ns on ECP5)
+//   Stage G1  — layer-1 register (inside median_filter, s1_r[0..8]) +
+//               gaussian row-sum register (inside gaussian_filter, 3×11 bits) +
+//               matching centre_r / sel_wr2 / vld_wr2
+//               gaussian_px combinational at cycle 2 from win_flat
+//   Stage G2  — layers-2-3 register (inside median_filter, q[0..8]) +
+//               gaussian_r2 / centre_r2 / sel_wr3 / vld_wr3
+//   Stage G3  — stage-2a-a register (inside median_filter, v1_r[0..8]) +
+//               gaussian_r3 / centre_r3 / sel_wr4 / vld_wr4
+//   Stage G4  — stage-2a-b register (inside median_filter, r[0..8]) +
+//               gaussian_r4 / centre_r4 / sel_wr5 / vld_wr5
+//   Stage G5  — stage-2b-a register (inside median_filter, w_r[0..8]) →
+//               gaussian_r5 / centre_r5 / sel_wr6 / vld_wr6 delay gaussian/bypass to cycle 6
+//   Stage G6  — gaussian/bypass delay register: gaussian_r6 / centre_r6 at cycle 7.
+//               median_px and adaptive_median_px arrive at cycle 7 from their own internal
+//               w2_r stage (stage-2b-b-a register added inside median_filter and
+//               adaptive_median_filter). No pre-register needed for them in G6.
+//   Stage C   — comb pre-register: comb_px/sel_wr7/vld_wr7 → comb_r/sel_r/vld_r
+//   Stages 1..DIV_STAGES — delay chain aligning comb/sel/vld with the Wiener path
+//   Output    — mux then pixel_out / valid_out register
+//   (wiener_px arrives at cycle 18 = comb_d[10]; no extra wiener_r needed)
+//   DIV_STAGES = 10 (unchanged; w2_r internal stage replaces the G6 pre-register)
+
+`default_nettype none
+
+module filter_controller #(
+    parameter int DEPTH     = 8,
+    parameter int NV_W = 16
+) (
+    input  logic               clk,
+    input  logic               rst_n,
+    input  logic [2:0]         filter_sel,
+    input  logic [NV_W-1:0]    noise_var,  // Wiener noise power, squared grey levels
+    input  logic [3*3*DEPTH-1:0] win_flat,   // flat; element [r][c] = win_flat[(r*3+c)*DEPTH +: DEPTH]
+    input  logic               valid_in,
+    // Register enable. The output register must advance ONLY on the cycles the
+    // window generator advances, otherwise a stalled stream (s_valid low) makes
+    // this block re-register the held window and emit the same pixel again with
+    // m_valid still high — a silent duplicate for every stall cycle.
+    input  logic               en,
+    output logic [DEPTH-1:0]   pixel_out,
+    output logic               valid_out
+);
+    // ── Win-input register ────────────────────────────────────────────────
+    // Registers win_flat, filter_sel and valid_in one cycle before presenting
+    // them to the filter cores.  This cuts the window_gen counter propagation
+    // (routing + LUT mux logic, ~3.5 ns) out of the critical path so the new
+    // critical path starts from win_r's Q rather than window_gen's counter FF.
+    localparam int WIENER_STAGES = 8;   // restoring-division stages (wiener_filter param)
+    localparam int DIV_STAGES    = 10;  // wiener_filter latency (STAGES+9); chain shortened by G3+G4+G5+G6 stages
+
+    logic [3*3*DEPTH-1:0] win_r;
+    logic [2:0]           sel_wr;
+    logic                 vld_wr;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin win_r <= '0; sel_wr <= 3'b000; vld_wr <= 1'b0; end
+        else if (en) begin win_r <= win_flat; sel_wr <= filter_sel; vld_wr <= valid_in; end
+    end
+
+    // ── Filter core outputs ────────────────────────────────────────────────
+    logic [DEPTH-1:0] median_px;
+    logic [DEPTH-1:0] adaptive_median_px;
+    logic [DEPTH-1:0] gaussian_px;
+    logic [DEPTH-1:0] wiener_px;
+
+    // median_filter is pipelined (5-cycle latency): s1_r fires at cycle 2; q[] at cycle 3;
+    // v1_r[] at cycle 4; r[] at cycle 5; w_r[] at cycle 6; median_px is Stage 2b-b comb at cycle 6.
+    // gaussian_px and centre_r are delayed by Stages G2+G3+G4+G5 (below) to match cycle 6.
+    median_filter  #(.DEPTH(DEPTH))
+        u_median  (.clk(clk), .rst_n(rst_n), .en(en),
+                   .win_flat(win_r), .median_out(median_px));
+
+    // adaptive_median_filter: same 5-cycle latency as median_filter; adaptive_median_px
+    // arrives at cycle 6 from win_flat — no extra alignment needed.
+    adaptive_median_filter #(.DEPTH(DEPTH))
+        u_adaptive_median (.clk(clk), .rst_n(rst_n), .en(en),
+                           .win_flat(win_r), .adaptive_out(adaptive_median_px));
+
+    // gaussian_filter is pipelined (1-cycle latency): its row-sum register fires
+    // one cycle after win_r is presented, so gaussian_px is available at cycle 2
+    // from win_flat.  centre_r/sel_wr2/vld_wr2 delay the bypass path to match
+    // (stage G below).
+    gaussian_filter #(.DEPTH(DEPTH))
+        u_gaussian (.clk(clk), .rst_n(rst_n), .en(en),
+                    .win_flat(win_r), .gaussian_out(gaussian_px));
+
+    // wiener_filter latency: STAGES(8) + squaring(1) + row-partial(1) + pre-stage(1) + variance-stage(1) + den_v(1) + gain-multiply(1) + gain-product(1) + output-acc(1) + recip-product(1) = 17.
+    // win_r delays the window by 1 cycle (cycle 1 from win_flat).
+    // wiener_px arrives at cycle 18 from win_flat.
+    // The comb path: W(1) + G1(1) + G2(1) + G3(1) + G4(1) + G5(1) + G6(1) + C(1) + chain(10) = comb_d[10] at cycle 18.
+    // wiener_px (18) = comb_d[10] (18) — no alignment register needed.  ✓
+    // Output register adds one more — total latency = DIV_STAGES + 9.
+    wiener_filter  #(.DEPTH(DEPTH), .NV_W(NV_W), .STAGES(WIENER_STAGES))
+        u_wiener  (.clk(clk), .rst_n(rst_n), .en(en),
+                   .win_flat(win_r), .noise_var(noise_var), .wiener_out(wiener_px));
+
+    // ── Stage G1: align bypass / sel / vld with gaussian_px ─────────────────
+    // gaussian_filter is pipelined (1-cycle latency): gaussian_px at cycle 2.
+    // Centre and sel/vld are combinational from win_r (cycle 1); one register
+    // delays them to cycle 2 to match gaussian_px.
+
+    logic [DEPTH-1:0] centre;       // combinational from win_r
+    assign centre = win_r[4*DEPTH +: DEPTH];
+
+    logic [DEPTH-1:0] centre_r;
+    logic [2:0]       sel_wr2;
+    logic             vld_wr2;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            centre_r <= '0;
+            sel_wr2  <= 3'b000; vld_wr2 <= 1'b0;
+        end else if (en) begin
+            centre_r <= centre;
+            sel_wr2  <= sel_wr; vld_wr2 <= vld_wr;
+        end
+    end
+
+    // ── Stage G2: advance gaussian_px and centre_r to cycle 3 ────────────────
+    // median_filter's s1_r fires at cycle 2; q[] fires at cycle 3.
+    // Delay gaussian_px and centre_r one more cycle to reach cycle 3.
+
+    logic [DEPTH-1:0] gaussian_r2;
+    logic [DEPTH-1:0] centre_r2;
+    logic [2:0]       sel_wr3;
+    logic             vld_wr3;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            gaussian_r2 <= '0; centre_r2 <= '0;
+            sel_wr3 <= 3'b000; vld_wr3 <= 1'b0;
+        end else if (en) begin
+            gaussian_r2 <= gaussian_px;
+            centre_r2   <= centre_r;
+            sel_wr3 <= sel_wr2; vld_wr3 <= vld_wr2;
+        end
+    end
+
+    // ── Stage G3: advance gaussian_r2 and centre_r2 to cycle 4 ──────────────
+    // median_filter's q[] fires at cycle 3; v1_r[] fires at cycle 4.
+    // Delay gaussian_r2 and centre_r2 one more cycle to reach cycle 4.
+
+    logic [DEPTH-1:0] gaussian_r3;
+    logic [DEPTH-1:0] centre_r3;
+    logic [2:0]       sel_wr4;
+    logic             vld_wr4;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            gaussian_r3 <= '0; centre_r3 <= '0;
+            sel_wr4 <= 3'b000; vld_wr4 <= 1'b0;
+        end else if (en) begin
+            gaussian_r3 <= gaussian_r2;
+            centre_r3   <= centre_r2;
+            sel_wr4 <= sel_wr3; vld_wr4 <= vld_wr3;
+        end
+    end
+
+    // ── Stage G4: advance gaussian_r3 and centre_r3 to cycle 5 ──────────────
+    // median_filter's v1_r[] fires at cycle 4; r[] fires at cycle 5.
+    // Delay gaussian_r3 and centre_r3 one more cycle to reach cycle 5.
+
+    logic [DEPTH-1:0] gaussian_r4;
+    logic [DEPTH-1:0] centre_r4;
+    logic [2:0]       sel_wr5;
+    logic             vld_wr5;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            gaussian_r4 <= '0; centre_r4 <= '0;
+            sel_wr5 <= 3'b000; vld_wr5 <= 1'b0;
+        end else if (en) begin
+            gaussian_r4 <= gaussian_r3;
+            centre_r4   <= centre_r3;
+            sel_wr5 <= sel_wr4; vld_wr5 <= vld_wr4;
+        end
+    end
+
+    // ── Stage G5: advance gaussian_r4 and centre_r4 to cycle 6 ──────────────
+    // median_filter's r[] fires at cycle 5; w_r[] fires at cycle 6.
+    // Delay gaussian_r4 and centre_r4 one more cycle to reach cycle 6.
+
+    logic [DEPTH-1:0] gaussian_r5;
+    logic [DEPTH-1:0] centre_r5;
+    logic [2:0]       sel_wr6;
+    logic             vld_wr6;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            gaussian_r5 <= '0; centre_r5 <= '0;
+            sel_wr6 <= 3'b000; vld_wr6 <= 1'b0;
+        end else if (en) begin
+            gaussian_r5 <= gaussian_r4;
+            centre_r5   <= centre_r4;
+            sel_wr6 <= sel_wr5; vld_wr6 <= vld_wr5;
+        end
+    end
+
+    // ── Stage G6: gaussian/bypass delay register ──────────────────────────
+    // median_px and adaptive_median_px now arrive at cycle 7 from win_flat
+    // via their own internal w2_r stage (stage-2b-b split in each module).
+    // Only gaussian/bypass need this extra delay cycle to reach cycle 7.
+    // sel_wr7/vld_wr7 kept here so the mux control is aligned with all inputs.
+
+    logic [DEPTH-1:0] gaussian_r6;
+    logic [DEPTH-1:0] centre_r6;
+    logic [2:0]       sel_wr7;
+    logic             vld_wr7;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            gaussian_r6 <= '0;
+            centre_r6   <= '0;
+            sel_wr7 <= 3'b000; vld_wr7 <= 1'b0;
+        end else if (en) begin
+            gaussian_r6 <= gaussian_r5;
+            centre_r6   <= centre_r5;
+            sel_wr7 <= sel_wr6; vld_wr7 <= vld_wr6;
+        end
+    end
+
+    // ── Output mux + pipeline register ────────────────────────────────────
+    logic [DEPTH-1:0] mux_out;
+
+    // All mux inputs arrive at cycle 7 from win_flat:
+    //   median_px             — combinational from w2_r (step 19, ~3 ns, cycle 7)
+    //   adaptive_median_px    — combinational from w2_r+adaptive mux (~7 ns, cycle 7)
+    //   gaussian_r6           — gaussian_r5 delayed one cycle by Stage G6
+    //   centre_r6             — centre_r5 delayed one cycle by Stage G6
+    // Mux is ~2 ns deep (pure LUT, no carry chain from filter output FF).
+    logic [DEPTH-1:0] comb_px;
+    always_comb begin
+        case (sel_wr7)
+            3'b001:  comb_px = median_px;           // cycle 7 from win_flat ✓
+            3'b010:  comb_px = gaussian_r6;         // cycle 7 from win_flat ✓
+            3'b100:  comb_px = adaptive_median_px;  // cycle 7 from win_flat ✓
+            default: comb_px = centre_r6;           // bypass + reserved
+        endcase
+    end
+
+    // Comb pre-register: all mux inputs are registered → comb_px is pure mux
+    // (~2 ns), well within 10 ns.  sel_r and vld_r in lockstep with sel_wr7.
+    logic [DEPTH-1:0] comb_r;
+    logic [2:0]       sel_r;
+    logic             vld_r;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin comb_r <= '0; sel_r <= 3'b000; vld_r <= 1'b0; end
+        else if (en) begin comb_r <= comb_px; sel_r <= sel_wr7; vld_r <= vld_wr7; end
+    end
+
+    // Driven only by their always_ff blocks; see the note in wiener_filter.sv
+    // about mixing continuous and clocked drivers on one array.
+    logic [DEPTH-1:0] comb_d [1:DIV_STAGES];
+    logic [2:0]       sel_d  [1:DIV_STAGES];
+    logic             vld_d  [1:DIV_STAGES];
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            comb_d[1] <= '0;
+            sel_d[1]  <= 3'b000;
+            vld_d[1]  <= 1'b0;
+        end else if (en) begin
+            comb_d[1] <= comb_r;
+            sel_d[1]  <= sel_r;
+            vld_d[1]  <= vld_r;
+        end
+    end
+
+    for (genvar gd = 1; gd < DIV_STAGES; gd++) begin : g_delay
+        always_ff @(posedge clk) begin
+            if (!rst_n) begin
+                comb_d[gd+1] <= '0;
+                sel_d[gd+1]  <= 3'b000;
+                vld_d[gd+1]  <= 1'b0;
+            end else if (en) begin
+                comb_d[gd+1] <= comb_d[gd];
+                sel_d[gd+1]  <= sel_d[gd];
+                vld_d[gd+1]  <= vld_d[gd];
+            end
+        end
+    end
+
+    // wiener_px arrives at cycle 18 from win_flat (win_r at cycle 1 + STAGES+9 = 17 cycles + 1).
+    // comb_d[10] also arrives at cycle 18: W(1)+G1(1)+G2(1)+G3(1)+G4(1)+G5(1)+G6(1)+C(1)+chain(10) = 18.
+    // They are in phase — no alignment register needed.
+    always_comb begin
+        mux_out = (sel_d[DIV_STAGES] == 3'b011) ? wiener_px : comb_d[DIV_STAGES];
+    end
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            pixel_out <= '0;
+            valid_out <= 1'b0;
+        end else if (en) begin
+            pixel_out <= mux_out;
+            valid_out <= vld_d[DIV_STAGES];
+        end else begin
+            valid_out <= 1'b0;   // no new pixel this cycle
+        end
+    end
+
+endmodule
+
+`default_nettype wire

@@ -1,0 +1,19 @@
+Noise-classifier CNN — export report
+============================================================
+Checkpoint       : C:\Users\Admin\Desktop\Project\adaptive-fpga-denoiser-master\models\checkpoints\best_model.pt
+Classes          : ['clean', 'salt_pepper', 'gaussian', 'speckle', 'rician']
+Parameters       : 60,725
+Input shape      : (1, 1, 224, 224)
+
+Format                     Size  Notes
+------------------------------------------------------------
+FP32 checkpoint        248.0 KB  original .pt
+ONNX (FP32)             29.0 KB  opset 17
+INT8 TorchScript       287.0 KB  dynamic quant, Linear
+
+INT8 accuracy vs FP32 (200 random inputs):
+  max |logit_fp32 - logit_int8| = 0.029421
+  mean|logit_fp32 - logit_int8| = 0.006999
+
+INT8 compression:
+  0.86x smaller than FP32 checkpoint

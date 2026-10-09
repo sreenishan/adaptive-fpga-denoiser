@@ -1,0 +1,219 @@
+// tb_wiener_filter.sv
+//
+// Self-checking testbench for wiener_filter. Reference mirrors the exact-integer
+// formulation from the SV:
+//
+//   v81  = 9*s2 - s*s          (81 * variance, exact)
+//   gain = clamp((v81-nv81)<<8 / max(v81,nv81), 0, 255)  in Q8
+//   out  = (s*256 + gain*(9*centre - s) + 1152) / 2304   (round half-up)
+//
+// Tests:
+//   1. Flat window — any value, any NV — must return the uniform value
+//   2. NV=0 on non-flat window — gain=1 (pass-through after smoothing to
+//      local mean, but here mean=(s/9) and centre is the exact SV formula)
+//   3. 1500 pseudorandom windows × NV ∈ {0,1,25,100,400} against the
+//      inline reference (tolerance: 1 grey level, per hardware.yaml)
+
+`timescale 1ns/1ps
+`default_nettype none
+
+module tb_wiener_filter;
+
+    parameter int DEPTH     = 8;
+    parameter int NOISE_VAR = 100;
+
+    // ── DUT ────────────────────────────────────────────────────────────────
+    // noise_var is a runtime input, so one instance covers every NV value:
+    // check9 drives the port and the reference from the same argument.
+
+    logic [DEPTH-1:0] win [0:2][0:2];
+    logic [DEPTH-1:0] wiener_out;
+
+    // The filters take a flat packed window (unpacked-array ports are poorly
+    // supported by Icarus, which is why the RTL was flattened). This bench was
+    // written against the old `win` array port and never updated, so it failed
+    // to elaborate. The array is kept for the stimulus and reference code
+    // below; win_flat is packed from it in the layout the module documents:
+    // element [r][c] = win_flat[(r*3+c)*DEPTH +: DEPTH].
+    logic [3*3*DEPTH-1:0] win_flat;
+    genvar gr, gc;
+    generate
+        for (gr = 0; gr < 3; gr++) begin : g_row
+            for (gc = 0; gc < 3; gc++) begin : g_col
+                assign win_flat[(gr*3+gc)*DEPTH +: DEPTH] = win[gr][gc];
+            end
+        end
+    endgenerate
+
+    localparam int NV_W = 16;
+    logic [NV_W-1:0] noise_var;
+
+    // The pipeline has ten stages: squaring, row-partial-sum, pre-stage,
+    // variance-stage, den_v, WIENER_STAGES restoring steps, gain-multiply,
+    // gain-product, output-accumulator, and reciprocal-product.
+    // Total latency = WIENER_STAGES+9.
+    localparam int WIENER_STAGES = 8;          // STAGES parameter passed to DUT
+    localparam int LATENCY       = WIENER_STAGES + 9;  // 17: total cycles to wait
+
+    logic clk = 1'b0;
+    logic rst_n;
+    always #5 clk = ~clk;
+
+    wiener_filter #(.DEPTH(DEPTH), .NV_W(NV_W), .STAGES(WIENER_STAGES)) dut (
+        .clk(clk),
+        .rst_n(rst_n),
+        .en(1'b1),
+        .win_flat(win_flat),
+        .noise_var(noise_var),
+        .wiener_out(wiener_out)
+    );
+
+    // Present a window and wait for its result to emerge. Inputs change on the
+    // falling edge so they are stable at every posedge the pipeline samples.
+    task automatic settle;
+        repeat (LATENCY) @(posedge clk);
+        #1;
+    endtask
+
+    // ── Inline reference ───────────────────────────────────────────────────
+    // Matches wiener_filter.sv statement for statement, integer arithmetic.
+    function automatic integer ref_wiener(
+        input [DEPTH-1:0] p0,p1,p2,p3,p4,p5,p6,p7,p8,
+        input integer nv
+    );
+        integer s, s2, v81, nv81, num, den, gain;
+        integer centre_term, acc, q;
+        integer p [0:8];
+        p[0]=p0; p[1]=p1; p[2]=p2;
+        p[3]=p3; p[4]=p4; p[5]=p5;
+        p[6]=p6; p[7]=p7; p[8]=p8;
+        s=0; s2=0;
+        for (int i=0; i<9; i++) begin s += p[i]; s2 += p[i]*p[i]; end
+        v81  = 9*s2 - s*s;
+        nv81 = 81*nv;
+        num  = (v81 > nv81) ? (v81 - nv81) : 0;
+        den  = (v81 > nv81) ? v81 : nv81;
+        if (den == 0) begin
+            gain = 0;
+        end else begin
+            gain = (num << 8) / den;
+            if (gain > 255) gain = 255;
+        end
+        centre_term = 9*p[4] - s;
+        acc = s*256 + gain*centre_term + 1152;
+        if (acc <= 0) q = 0;
+        else          q = acc / 2304;
+        if (q > 255) q = 255;
+        return q;
+    endfunction
+
+    // ── Drive and check ────────────────────────────────────────────────────
+    int errors;
+
+    task automatic check9(
+        input [DEPTH-1:0] p0,p1,p2,p3,p4,p5,p6,p7,p8,
+        input integer nv
+    );
+        integer exp;
+        @(negedge clk);
+        win[0][0]=p0; win[0][1]=p1; win[0][2]=p2;
+        win[1][0]=p3; win[1][1]=p4; win[1][2]=p5;
+        win[2][0]=p6; win[2][1]=p7; win[2][2]=p8;
+        noise_var = NV_W'(nv);
+        settle();
+        exp = ref_wiener(p0,p1,p2,p3,p4,p5,p6,p7,p8, nv);
+        // Tolerance: 1 grey level (hardware.yaml max_abs_error.wiener = 1)
+        if ((wiener_out > exp+1) || (int'(wiener_out)+1 < exp)) begin
+            $display("FAIL NV=%0d: wiener(%0d,%0d,%0d, %0d,%0d,%0d, %0d,%0d,%0d) = %0d, want %0d",
+                nv, p0,p1,p2,p3,p4,p5,p6,p7,p8, wiener_out, exp);
+            errors++;
+        end
+    endtask
+
+    // Check DUT output exactly equals reference (no tolerance argument)
+    task automatic check_exact(
+        input [DEPTH-1:0] p0,p1,p2,p3,p4,p5,p6,p7,p8
+    );
+        integer exp;
+        @(negedge clk);
+        win[0][0]=p0; win[0][1]=p1; win[0][2]=p2;
+        win[1][0]=p3; win[1][1]=p4; win[1][2]=p5;
+        win[2][0]=p6; win[2][1]=p7; win[2][2]=p8;
+        noise_var = NV_W'(NOISE_VAR);
+        settle();
+        exp = ref_wiener(p0,p1,p2,p3,p4,p5,p6,p7,p8, NOISE_VAR);
+        if (wiener_out !== exp[DEPTH-1:0]) begin
+            $display("FAIL: wiener(%0d,%0d,%0d, %0d,%0d,%0d, %0d,%0d,%0d) = %0d, want %0d",
+                p0,p1,p2,p3,p4,p5,p6,p7,p8, wiener_out, exp);
+            errors++;
+        end
+    endtask
+
+    integer seed;
+
+    initial begin
+        errors = 0;
+        seed   = 99;
+        noise_var = NV_W'(NOISE_VAR);
+        rst_n = 1'b0;
+        repeat (2) @(posedge clk);
+        rst_n = 1'b1;
+
+        // ── 1. Flat windows — must return the uniform value ───────────────
+        // Any flat window (all pixels equal) has variance=0.
+        // With NV=100: v81=0, nv81=8100, num=0, gain=0.
+        // out = (k*9*256 + 0 + 1152) / 2304 = k + 1152/2304 = k (integer) = k.
+        check_exact(  0,  0,  0,  0,  0,  0,  0,  0,  0);
+        check_exact(255,255,255,255,255,255,255,255,255);
+        check_exact(128,128,128,128,128,128,128,128,128);
+        check_exact( 64, 64, 64, 64, 64, 64, 64, 64, 64);
+        check_exact(  1,  1,  1,  1,  1,  1,  1,  1,  1);
+        check_exact(100,100,100,100,100,100,100,100,100);
+
+        // ── 2. Known non-flat windows ─────────────────────────────────────
+        // Ramp: 0,1,2,3,4,5,6,7,8 → s=36, s2=204, v81=9*204-36^2=1836-1296=540
+        // centre=4. With NV=100: nv81=8100 > v81 → gain=0 → out = (36*256+1152)/2304 = 9456/2304 = 4.
+        check_exact(0,1,2,3,4,5,6,7,8);
+        // Salt-and-pepper: 0,0,0,0,255,0,0,0,0  (mostly dark, bright centre)
+        check_exact(0,0,0,0,255,0,0,0,0);
+        // Checkerboard-like: 0,255,0,255,0,255,0,255,0
+        check_exact(0,255,0,255,0,255,0,255,0);
+
+        // ── 3. Pseudorandom sweep with NV=NOISE_VAR ──────────────────────
+        for (int i = 0; i < 1500; i++) begin
+            logic [DEPTH-1:0] p [0:8];
+            for (int k = 0; k < 9; k++)
+                p[k] = $urandom(seed) % 256;
+            check9(p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],p[8], NOISE_VAR);
+        end
+
+        // ── 4. NV sweep, which a compile-time parameter could not do ─────
+        // The header claims agreement across NV in {0,1,25,100,400,4000}; with
+        // a runtime port that claim is now checked in this run, plus 65025
+        // (255^2, the largest meaningful value and the top of NV_W).
+        for (int n = 0; n < 7; n++) begin
+            integer nv;
+            case (n)
+                0: nv = 0;    1: nv = 1;     2: nv = 25;   3: nv = 100;
+                4: nv = 400;  5: nv = 4000;  default: nv = 65025;
+            endcase
+            for (int i = 0; i < 300; i++) begin
+                logic [DEPTH-1:0] p [0:8];
+                for (int k = 0; k < 9; k++)
+                    p[k] = $urandom(seed) % 256;
+                check9(p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],p[8], nv);
+            end
+        end
+
+        // ── Result ───────────────────────────────────────────────────────
+        if (errors == 0)
+            $display("tb_wiener_filter: PASS (all tests passed)");
+        else
+            $fatal(1, "tb_wiener_filter: FAIL (%0d errors)", errors);
+
+        $finish;
+    end
+
+endmodule
+
+`default_nettype wire

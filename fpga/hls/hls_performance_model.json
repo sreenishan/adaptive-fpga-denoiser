@@ -1,0 +1,101 @@
+{
+  "note": "All figures calculated from design parameters in parameters.h. Not measured on hardware. Not fabricated.",
+  "hls_project": "fpga/hls/noise_classifier_hls",
+  "precision": "ap_fixed<16,6>",
+  "io_type": "io_stream",
+  "strategy": "nnet::latency",
+  "implementation": "linebuffer",
+  "reuse_factor": 64,
+  "target_part": "xc7z020clg400-1",
+  "clock_mhz": 100.0,
+  "clock_ns": 10.0,
+  "total_cycles": 2809861,
+  "total_latency_ms": 28.099,
+  "throughput_fps": 35.6,
+  "total_mac_ops": 151732544,
+  "bottleneck_layer": "conv1 (features_1_block_0)",
+  "bottleneck_cycles": 903168,
+  "layers": [
+    {
+      "name": "conv0 (features_0_block_0)",
+      "type": "Conv2d",
+      "multiplier_limit": 3,
+      "n_partitions": 50176,
+      "cycles": 150528,
+      "ms": 1.505,
+      "pct_of_total": 5.4
+    },
+    {
+      "name": "maxpool0 (features_0_block_3)",
+      "type": "MaxPool2d",
+      "multiplier_limit": 1,
+      "n_partitions": 200704,
+      "cycles": 200704,
+      "ms": 2.007,
+      "pct_of_total": 7.1
+    },
+    {
+      "name": "conv1 (features_1_block_0)",
+      "type": "Conv2d",
+      "multiplier_limit": 72,
+      "n_partitions": 12544,
+      "cycles": 903168,
+      "ms": 9.032,
+      "pct_of_total": 32.1
+    },
+    {
+      "name": "maxpool1 (features_1_block_3)",
+      "type": "MaxPool2d",
+      "multiplier_limit": 1,
+      "n_partitions": 100352,
+      "cycles": 100352,
+      "ms": 1.004,
+      "pct_of_total": 3.6
+    },
+    {
+      "name": "conv2 (features_2_block_0)",
+      "type": "Conv2d",
+      "multiplier_limit": 288,
+      "n_partitions": 3136,
+      "cycles": 903168,
+      "ms": 9.032,
+      "pct_of_total": 32.1
+    },
+    {
+      "name": "maxpool2 (features_2_block_3)",
+      "type": "MaxPool2d",
+      "multiplier_limit": 1,
+      "n_partitions": 50176,
+      "cycles": 50176,
+      "ms": 0.502,
+      "pct_of_total": 1.8
+    },
+    {
+      "name": "conv3 (features_3_block_0)",
+      "type": "Conv2d",
+      "multiplier_limit": 576,
+      "n_partitions": 784,
+      "cycles": 451584,
+      "ms": 4.516,
+      "pct_of_total": 16.1
+    },
+    {
+      "name": "avgpool28 (pool)",
+      "type": "AvgPool2d",
+      "multiplier_limit": 1,
+      "n_partitions": 50176,
+      "cycles": 50176,
+      "ms": 0.502,
+      "pct_of_total": 1.8
+    },
+    {
+      "name": "dense (classifier_2)",
+      "type": "Dense",
+      "multiplier_limit": 5,
+      "n_partitions": 1,
+      "cycles": 5,
+      "ms": 0.0,
+      "pct_of_total": 0.0
+    }
+  ]
+}

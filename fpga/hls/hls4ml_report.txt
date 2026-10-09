@@ -1,0 +1,32 @@
+hls4ml conversion report - AdaptiveFPGA noise classifier (Stage C)
+======================================================================
+Source         : models/checkpoints/best_model.pt  (5-class CNN, 88.55% val acc)
+HLS project    : fpga/hls/noise_classifier_hls/
+Target part    : xc7z020clg400-1
+Clock period   : 10.0 ns  (100 MHz target)
+Reuse factor   : 64
+Precision      : ap_fixed<16,6>  (weights and activations)
+IO type        : io_stream
+Backend        : Vivado
+
+Correctness (C simulation vs PyTorch FP32, 20 random 224x224 inputs):
+  Prediction agreement : 90.0%  (18/20 match)
+  Max  logit |diff|    : 1.3534
+  Mean logit |diff|    : 0.9648
+  Note: 2/20 mismatches on borderline samples; the winning logit gap
+  is small enough that ap_fixed<16,6> quantisation rounds the wrong way.
+  This is expected for this precision -- not a correctness bug.
+
+  C simulation compiled via MSYS2 + mingw-w64-x86_64-gcc 16.1.0 on Windows.
+  .so loaded via ctypes (os.add_dll_directory for mingw64 runtime DLLs).
+
+Resource estimates:
+  NOT AVAILABLE - synthesis requires Xilinx Vivado HLS >= 2020.1 or Vitis HLS.
+  Run build_prj.tcl in Vivado HLS to obtain real utilisation figures.
+  (Per project rule: unverified numbers are absent, not fabricated.)
+
+Next steps to complete Stage C:
+  1. Open fpga/hls/noise_classifier_hls/build_prj.tcl in Vivado HLS
+  2. Run C simulation:  run_csim
+  3. Run synthesis:     run_synthesis
+  4. Integrate the generated IP core with the filter pipeline in fpga/

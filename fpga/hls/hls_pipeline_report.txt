@@ -1,0 +1,43 @@
+HLS CNN Inference Pipeline Report
+================================================================
+Generated : 2026-10-09 01:39
+Checkpoint: hw_pruned_finetuned.pt
+
+Stage results:
+  [1] Model selection  : OK (hw_pruned_finetuned.pt)
+  [2] ONNX validation  : OK
+  [3] HLS C++ project  : OK
+  [4] C-sim compile    : OK
+  [5] C-sim smoke test : OK
+
+C-sim result (Stage 1b smoke test):
+  Mode       : smoke_test_random_inputs
+  N inputs   : 5
+  Predictions: [3, 3, 3, 3, 3]
+  Precision  : ap_fixed<16,6>
+
+  [6] Performance model: OK
+
+Theoretical performance (calculated from parameters.h):
+  Precision  : ap_fixed<16,6>
+  IO type    : io_stream
+  Reuse fac  : 64
+  Clock      : 100 MHz
+  Latency    : 28.1 ms/image  (2,809,861 cycles)
+  Throughput : 35.6 FPS  (continuous streaming)
+  MACs       : 151,732,544
+  Bottleneck : conv1 (features_1_block_0)
+
+  Note: figures calculated from architecture parameters, not synthesised
+  or measured on hardware.  RTL synthesis requires Vivado HLS >= 2020.1.
+
+What this pipeline does NOT produce:
+  - Synthesis resource counts (LUT/FF/DSP/BRAM)  → requires Vivado HLS
+  - Timing closure report                         → requires Vivado HLS
+  - Bitstream or hardware test                    → requires Zynq board
+  Per CLAUDE.md: unverified numbers are absent, not fabricated.
+
+See:
+  fpga/hls/noise_classifier_hls/build_prj.tcl  — Vivado HLS TCL project
+  .github/workflows/hls_synthesis.yml           — CI for C-sim + synthesis
+  fpga/asic/                                     — ASIC flow (filter RTL)

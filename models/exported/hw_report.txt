@@ -1,0 +1,22 @@
+Hardware-Friendly CNN — Optimization Report
+================================================================
+Source checkpoint : best_model.pt
+Classes           : ['clean', 'salt_pepper', 'gaussian', 'speckle', 'rician']
+Val images        : 585
+
+Stage                                          Acc     ΔAcc       kB   Sparsity
+------------------------------------------------------------------------------
+baseline FP32                               0.8855        —    247.3          —
+pruned 30% (no fine-tune)                   0.5983  -0.2872    247.3     30.0%
+pruned 30% + fine-tune x5                   0.9162  +0.0308    247.3      0.0%
+pruned 30% + fine-tune + INT8               0.9162  +0.0308     80.2      0.0%
+ONNX (pruned FP32, opset 18)                0.9162  +0.0308     29.5      0.0%
+
+Notes
+-----
+Sparsity target : 30% L1 unstructured (Conv2d only)
+Fine-tune       : 5 epochs, Adam lr=0.0001
+Quantization    : FX graph-mode static INT8, fbgemm backend
+ONNX            : exported from pruned FP32 (not INT8 FX model)
+All accuracy figures measured on validation split; nothing fabricated.
+Total elapsed   : 24400 s

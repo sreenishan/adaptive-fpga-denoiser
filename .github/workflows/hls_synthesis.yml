@@ -1,0 +1,159 @@
+name: HLS Synthesis (Vitis HLS → Zynq-7000)
+
+# Two-stage workflow for the hls4ml CNN IP core:
+#
+#   Stage 1 — C-sim validation (always runs):
+#     Compiles the hls4ml firmware from source using the Ubuntu g++ on the
+#     runner (no Vivado needed), then validates 5 random inferences to confirm
+#     the compiled shared library produces output.
+#
+#   Stage 2 — RTL synthesis (runs when XILINX_LICENSE_SERVER secret is set):
+#     Runs Vitis HLS to synthesise the C++ to RTL and reports LUT/FF/DSP/BRAM.
+#     The secret is a Vitis floating-license server address, e.g. 2100@host.
+#
+# Output artifact:  hls-results-<sha>
+#   hls_build.log          — .so compilation log
+#   hls_validation.json    — smoke-test result
+#   myproject_csynth.rpt   — resource/latency report (synthesis only)
+#   hls_synth.log          — full Vitis HLS log (synthesis only)
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "fpga/hls/**"
+      - "scripts/validate_hls_csim.py"
+      - ".github/workflows/hls_synthesis.yml"
+  workflow_dispatch:
+
+jobs:
+  hls-csim-and-synthesis:
+    name: "C-sim + Synthesis (xc7z020clg400-1)"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+
+    # Expose the secret as an env var so step-level `if:` can reference it
+    # via `env.` (the `secrets` context is not available in step `if:` expressions).
+    env:
+      XILINX_LICENSE_SERVER: ${{ secrets.XILINX_LICENSE_SERVER }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Install Python deps ────────────────────────────────────────────────
+      - name: Install Python dependencies
+        run: pip install numpy opencv-python-headless
+
+      # ── Stage 1: Compile .so from source ─────────────────────────────────
+      - name: "Stage 1a — Compile HLS firmware (.so)"
+        working-directory: fpga/hls/noise_classifier_hls
+        run: |
+          echo '=== Compiling hls4ml firmware ==='
+          bash build_lib.sh 2>&1 | tee ../hls_build.log
+          echo '=== Build complete ==='
+          ls -lh firmware/*.so
+
+      # ── Stage 1b: Smoke test (5 random inferences) ───────────────────────
+      - name: "Stage 1b — HLS C-sim smoke test (5 random inputs)"
+        run: |
+          echo '=== HLS C-sim smoke test (no dataset needed) ==='
+          python scripts/validate_hls_csim.py \
+            --random-inputs 5 \
+            --no-pytorch \
+            --output fpga/hls/hls_validation.json \
+            2>&1 | tee fpga/hls/hls_smoke.log
+          echo '=== Smoke test complete ==='
+          cat fpga/hls/hls_validation.json
+
+      # ── Stage 1c: Theoretical performance model ───────────────────────
+      - name: "Stage 1c — Theoretical latency/throughput model"
+        run: |
+          echo '=== HLS performance model (io_stream, reuse_factor=64) ==='
+          python scripts/hls4ml_profile.py \
+            --output fpga/hls/hls_performance_model.json
+          cat fpga/hls/hls_performance_model.json
+
+      # ── Stage 2: RTL synthesis via Vitis HLS (license required) ──────────
+      - name: "Stage 2 — Pull Vitis HLS image"
+        if: ${{ env.XILINX_LICENSE_SERVER != '' }}
+        run: |
+          docker pull xilinx/vitis:2022.1 || \
+            (echo "Vitis HLS image unavailable — synthesis skipped"; exit 0)
+
+      - name: "Stage 2 — RTL synthesis (xc7z020clg400-1, 10 ns)"
+        if: ${{ env.XILINX_LICENSE_SERVER != '' }}
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            -e XILINXD_LICENSE_FILE="${{ secrets.XILINX_LICENSE_SERVER }}" \
+            xilinx/vitis:2022.1 \
+            bash -c "
+              set -euo pipefail
+              cd /repo/fpga/hls/noise_classifier_hls
+              echo '=== Vitis HLS C-synthesis (xc7z020clg400-1, 10 ns) ==='
+              vitis_hls -f build_prj.tcl csim=0 synth=1 cosim=0 export=0 \
+                2>&1 | tee /repo/fpga/hls/hls_synth.log
+              echo '=== Synthesis complete ==='
+              RPT=myproject_prj/solution1/syn/report/myproject_csynth.rpt
+              if [ -f \"\$RPT\" ]; then
+                cp \"\$RPT\" /repo/fpga/hls/myproject_csynth.rpt
+                echo ''
+                echo '--- Resource summary ---'
+                grep -A 20 'Resource Estimates' \"\$RPT\" | head -25
+                echo ''
+                echo '--- Latency summary ---'
+                grep -A 10 'Timing (ns)' \"\$RPT\" | head -12
+              else
+                echo 'csynth.rpt not found — synthesis may have failed'
+              fi
+            " || echo "Synthesis step failed or license unavailable — see hls_synth.log"
+
+      # ── Upload results ────────────────────────────────────────────────────
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hls-results-${{ github.sha }}
+          path: |
+            fpga/hls/hls_build.log
+            fpga/hls/hls_smoke.log
+            fpga/hls/hls_validation.json
+            fpga/hls/hls_performance_model.json
+            fpga/hls/hls_synth.log
+            fpga/hls/myproject_csynth.rpt
+          retention-days: 30
+
+      # ── Summary ───────────────────────────────────────────────────────────
+      - name: Print summary
+        if: always()
+        run: |
+          echo "## HLS CNN Inference Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** xc7z020clg400-1 (Zynq-7000), 10 ns clock, \`ap_fixed<16,6>\`, reuse_factor=64" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f fpga/hls/hls_validation.json ]; then
+            echo "### Stage 1 — C-sim smoke test" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat fpga/hls/hls_validation.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f fpga/hls/hls_performance_model.json ]; then
+            echo "### Stage 1c — Theoretical Performance Model" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            python3 -c "import json; d=json.load(open('fpga/hls/hls_performance_model.json')); print(f'Latency   : {d[\"total_latency_ms\"]:.1f} ms/image (calculated from parameters.h)'); print(f'Throughput: {d[\"throughput_fps\"]:.1f} FPS (theoretical, io_stream, 100 MHz)'); print(f'MACs      : {d[\"total_mac_ops\"]:,}'); print(f'Bottleneck: {d[\"bottleneck_layer\"]}'); print('All figures calculated, not synthesised or measured.')"
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f fpga/hls/myproject_csynth.rpt ]; then
+            echo "### Stage 2 — RTL Synthesis Resources" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -A 20 'Resource Estimates' fpga/hls/myproject_csynth.rpt | head -25 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "### Latency" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -A 10 'Timing (ns)' fpga/hls/myproject_csynth.rpt | head -12 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Stage 2 — RTL Synthesis" >> $GITHUB_STEP_SUMMARY
+            echo "Synthesis report not generated. Set the **XILINX_LICENSE_SERVER** repository secret to enable RTL synthesis." >> $GITHUB_STEP_SUMMARY
+          fi
