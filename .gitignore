@@ -31,6 +31,7 @@ results/classifier/**
 !results/classifier/training_curves.png
 results/denoising/**
 results/rtl/**
+!results/rtl/cosim_224x224.json
 results/hardware/**
 # Re-include directories so git can descend into them and find the keep-files
 # below; without this, a nested .gitkeep stays invisible.
