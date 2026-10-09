@@ -582,8 +582,12 @@ strength. `clean` has no severity — no noise has no level.
 assumed to run on the FPGA.** `adaptive_median` is now in `FILTERS` (code
 3'b100) because `rtl/adaptive_median_filter.sv` exists and is verified.
 `SOFTWARE_FILTERS` is empty. Two passes of an RTL filter report `rtl_multipass`:
-the top module streams one pass per frame, so a second needs a cascaded core
-that is not built. The UI renders all three honestly; keep it so.
+`rtl/fpga_denoiser_cascade.sv` implements this — it chains two
+`fpga_denoiser_top` instances and the caller holds `s_flush` high for
+`CASCADE_FLUSH = 2*(IMG_WIDTH+2+PIPE_STAGES)+1` cycles (the +1 gap prevents
+the last pass-1 output pixel from colliding with the start of pass-2's flush;
+`tb_fpga_denoiser_cascade` verifies bypass×2 and gaussian×2 at 4×4).
+The UI renders all three honestly; keep it so.
 
 The camera tab is single-frame `st.camera_input`. Continuous video would need
 `streamlit-webrtc`, a new dependency that works poorly on Streamlit Cloud — ask

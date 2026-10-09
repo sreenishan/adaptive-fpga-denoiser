@@ -7,3 +7,4 @@ rtl/gaussian_filter.sv
 rtl/wiener_filter.sv
 rtl/filter_controller.sv
 rtl/fpga_denoiser_top.sv
+rtl/fpga_denoiser_cascade.sv
