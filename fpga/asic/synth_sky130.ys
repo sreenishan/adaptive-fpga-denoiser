@@ -1,0 +1,25 @@
+# Yosys synthesis script — sky130hd standard cells (native .ys format)
+#
+# Run from the repository root inside the ORFS Docker container:
+#
+#   yosys fpga/asic/synth_sky130.ys
+#
+# PDK_ROOT must point to the sky130 PDK root (e.g. /pdk).
+# Expected liberty file:
+#   $PDK_ROOT/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib
+#
+# Outputs:
+#   fpga/asic/results/fpga_denoiser_top_sky130.v
+#   fpga/asic/results/synth_stats.txt
+
+read_verilog -sv rtl/line_buffer.sv rtl/window_gen.sv rtl/median_filter.sv rtl/adaptive_median_filter.sv rtl/gaussian_filter.sv rtl/wiener_filter.sv rtl/filter_controller.sv rtl/fpga_denoiser_top.sv
+hierarchy -check -top fpga_denoiser_top
+synth -top fpga_denoiser_top
+read_liberty -lib /pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib
+dfflibmap -liberty /pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib
+abc -liberty /pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib -D 10000 -script {+strash;ifraig;scorr;dc2;dretime;strash;&get -n;&dch -f;&nf{16};&put;buffer;upsize;dnsize;stime -p}
+setundef -zero
+splitnets
+opt_clean -purge
+tee -o fpga/asic/results/synth_stats.txt stat -liberty /pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib
+write_verilog -noattr -noexpr -nohex -nodec fpga/asic/results/fpga_denoiser_top_sky130.v
