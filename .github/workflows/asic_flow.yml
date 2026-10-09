@@ -53,161 +53,100 @@ jobs:
 
       - name: Verify PDK installation
         run: |
-          echo "=== PDK directory structure ==="
-          ls -la "${{ github.workspace }}/.sky130-pdk/" || echo "PDK_DIR missing"
-          ls -la "${{ github.workspace }}/.sky130-pdk/sky130A/" 2>/dev/null || echo "sky130A subdir missing"
           LIB="${{ github.workspace }}/.sky130-pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib"
           if [ -d "$LIB" ]; then
-            echo "Liberty files found:"
-            ls "$LIB" | head -5
+            echo "Liberty files found:"; ls "$LIB" | head -5
           else
             echo "ERROR: Liberty dir not found at $LIB"
-            echo "Searching for .lib files under PDK_DIR:"
             find "${{ github.workspace }}/.sky130-pdk" -name "*.lib" 2>/dev/null | head -5 || echo "none found"
             exit 1
           fi
 
-      # ── Docker images ───────────────────────────────────────────────────────
-      # Stage 16 (yosys synthesis) uses the ORFS builder image where yosys is
-      # on the default PATH.  Stages 17-20 (openroad PnR) use the standalone
-      # openroad/ubuntu22.04 image where openroad is installed at /usr/bin/
-      # (Dockerfile copies /OpenROAD/install/ to /usr/).  Its ENTRYPOINT is
-      # `openroad`, so we pass --entrypoint bash to run our own commands.
-      - name: Pull Docker images
-        run: |
-          docker pull openroad/flow-ubuntu22.04-builder:latest
-          docker pull openroad/ubuntu22.04:latest
+      # ── Docker image ────────────────────────────────────────────────────────
+      # flow-ubuntu22.04-builder includes both yosys and OpenROAD; using a
+      # single container for all stages avoids cross-container file-ownership
+      # issues (files written by one container appear root-owned on the host
+      # and may be unwritable by a second container running as a different uid).
+      - name: Pull Docker image
+        run: docker pull openroad/flow-ubuntu22.04-builder:latest
 
-      # ── Stage 16: Synthesis ──────────────────────────────────────────────────
-      - name: "Stage 16 — Synthesis (yosys → sky130hd netlist)"
+      # ── All RTL-to-GDSII stages in one container ────────────────────────────
+      - name: "Stages 16-21 — Synthesis → Floorplan → Place+CTS → Route → Signoff → GDS"
         run: |
-          mkdir -p "${{ github.workspace }}/fpga/asic/results"
           docker run --rm \
             -v "${{ github.workspace }}:/repo" \
             -v "${{ github.workspace }}/.sky130-pdk:/pdk" \
             -e PDK_ROOT="/pdk" \
             openroad/flow-ubuntu22.04-builder:latest \
             bash -c "
+              set -euo pipefail
               cd /repo
               mkdir -p fpga/asic/results
-              echo '=== Stage 16: Synthesis ==='
-              echo 'Yosys version:'; yosys --version 2>&1 || echo 'yosys not found'
-              echo 'PDK check:'; ls /pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/ 2>/dev/null | head -3 || echo 'PDK lib missing'
+
+              # Locate openroad — path varies between image versions
+              OR_BIN=\$(command -v openroad 2>/dev/null || \
+                find /OpenROAD-flow-scripts /usr /usr/local -maxdepth 8 \
+                     -name openroad -type f 2>/dev/null | head -1 || true)
+              if [ -z \"\$OR_BIN\" ]; then
+                echo 'ERROR: openroad binary not found in image'
+                exit 1
+              fi
+              echo \"openroad: \$OR_BIN\"
+              \"\$OR_BIN\" -version 2>&1 || true
+
+              echo ''
+              echo '=== Stage 16: Synthesis (yosys → sky130hd) ==='
               yosys fpga/asic/synth_sky130.tcl 2>&1 | tee fpga/asic/results/synth.log
-              RC=\$?
               if [ -f fpga/asic/results/synth_stats.txt ]; then
-                echo '=== Synthesis stats ==='
+                echo '--- Synthesis stats ---'
                 cat fpga/asic/results/synth_stats.txt
               fi
-              exit \$RC
-            "
 
-      # ── Stage 17: Floorplan ──────────────────────────────────────────────────
-      - name: "Stage 17 — Floorplan"
-        run: |
-          docker run --rm --entrypoint bash \
-            -v "${{ github.workspace }}:/repo" \
-            -v "${{ github.workspace }}/.sky130-pdk:/pdk" \
-            -e PDK_ROOT="/pdk" \
-            openroad/ubuntu22.04:latest \
-            -c "
-              cd /repo
-              mkdir -p fpga/asic/results
-              echo '=== Stage 17: Diagnostics ==='
-              echo 'OpenROAD version:'; openroad -version 2>&1 || echo 'openroad -version failed'
-              echo 'Netlist:'; ls -lh fpga/asic/results/*.v 2>/dev/null || echo 'ERROR: No netlist .v files'
-              echo 'Liberty:'; ls /pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib 2>/dev/null && echo OK || echo 'ERROR: lib missing'
-              echo 'TechLEF:'; ls /pdk/sky130A/libs.ref/sky130_fd_sc_hd/techlef/sky130_fd_sc_hd__nom.tlef 2>/dev/null && echo OK || echo 'ERROR: techlef missing'
-              echo 'LEF:'; ls /pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.lef 2>/dev/null && echo OK || echo 'ERROR: lef missing'
+              echo ''
               echo '=== Stage 17: Floorplan ==='
-              openroad -exit fpga/asic/floorplan.tcl 2>&1 | tee fpga/asic/results/floorplan.log
-              OR_RC=\${PIPESTATUS[0]}
-              echo '=== Floorplan log tail ==='
-              tail -60 fpga/asic/results/floorplan.log || true
-              echo '--- floorplan DEF ---'
-              ls -lh fpga/asic/results/*floorplan*.def 2>/dev/null || true
-              exit \$OR_RC
-            "
+              \"\$OR_BIN\" -exit fpga/asic/floorplan.tcl 2>&1 | tee fpga/asic/results/floorplan.log
 
-      # ── Stage 18: Placement + CTS ────────────────────────────────────────────
-      - name: "Stage 18 — Placement + CTS"
-        run: |
-          docker run --rm --entrypoint bash \
-            -v "${{ github.workspace }}:/repo" \
-            -v "${{ github.workspace }}/.sky130-pdk:/pdk" \
-            -e PDK_ROOT="/pdk" \
-            openroad/ubuntu22.04:latest \
-            -c "
-              set -euo pipefail
-              cd /repo
+              echo ''
               echo '=== Stage 18: Placement + CTS ==='
-              openroad -exit fpga/asic/place_cts.tcl \
-                2>&1 | tee fpga/asic/results/place_cts.log
-              echo '--- CTS DEF ---'
-              ls -lh fpga/asic/results/*cts*.def 2>/dev/null || true
-            "
+              \"\$OR_BIN\" -exit fpga/asic/place_cts.tcl 2>&1 | tee fpga/asic/results/place_cts.log
 
-      # ── Stage 19: Routing + Signoff ──────────────────────────────────────────
-      - name: "Stage 19 — Routing + Signoff"
-        run: |
-          docker run --rm --entrypoint bash \
-            -v "${{ github.workspace }}:/repo" \
-            -v "${{ github.workspace }}/.sky130-pdk:/pdk" \
-            -e PDK_ROOT="/pdk" \
-            openroad/ubuntu22.04:latest \
-            -c "
-              set -euo pipefail
-              cd /repo
+              echo ''
               echo '=== Stages 19-21: Routing + Signoff + GDS ==='
-              openroad -exit fpga/asic/route_signoff.tcl \
-                2>&1 | tee fpga/asic/results/route.log
-              echo '=== Timing summary ==='
-              grep -E 'WNS|TNS|MET|VIOLATED' fpga/asic/results/timing_report.txt | head -10 || true
-              echo '=== Area summary ==='
-              head -10 fpga/asic/results/area_report.txt || true
-              echo '=== Power summary ==='
-              cat fpga/asic/results/power_report.txt || true
+              \"\$OR_BIN\" -exit fpga/asic/route_signoff.tcl 2>&1 | tee fpga/asic/results/route.log
+
+              echo ''
+              echo '=== Flow complete — results ==='
+              ls -lh fpga/asic/results/
             "
 
-      # ── Stage 20: KLayout DRC ────────────────────────────────────────────────
+      # ── KLayout DRC (optional, same image) ──────────────────────────────────
       - name: "Stage 20 — KLayout DRC"
-        # DRC on the GDSII using the sky130A.drc ruleset bundled in the ORFS image.
-        # The step is allowed to fail — DRC violations are reported, not fatal.
-        # klayout is not in openroad/ubuntu22.04; if not found the step skips.
         continue-on-error: true
         run: |
           docker run --rm --entrypoint bash \
             -v "${{ github.workspace }}:/repo" \
             -v "${{ github.workspace }}/.sky130-pdk:/pdk" \
             -e PDK_ROOT="/pdk" \
-            openroad/ubuntu22.04:latest \
+            openroad/flow-ubuntu22.04-builder:latest \
             -c "
               GDS=/repo/fpga/asic/results/fpga_denoiser_top.gds
               RPT=/repo/fpga/asic/results/drc_klayout.xml
               DRC_SCRIPT=/pdk/sky130A/libs.tech/klayout/sky130A.drc
               if [ ! -f \"\$GDS\" ]; then
-                echo 'GDSII not found — skipping KLayout DRC'
-                exit 0
+                echo 'GDSII not found — skipping KLayout DRC'; exit 0
               fi
               if ! command -v klayout >/dev/null 2>&1; then
-                echo 'klayout not found in this image — skipping DRC'
-                exit 0
+                echo 'klayout not in image — skipping DRC'; exit 0
               fi
               if [ ! -f \"\$DRC_SCRIPT\" ]; then
-                echo 'DRC script not found at' \"\$DRC_SCRIPT\" '— skipping'
-                exit 0
+                echo 'DRC script not found — skipping'; exit 0
               fi
-              echo '=== Stage 20: KLayout DRC (sky130A) ==='
+              echo '=== KLayout DRC (sky130A) ==='
               klayout -b -rd input=\"\$GDS\" -rd report=\"\$RPT\" -r \"\$DRC_SCRIPT\" \
                 2>&1 | tee /repo/fpga/asic/results/drc.log
               if [ -f \"\$RPT\" ]; then
                 VIOLS=\$(grep -c '<item>' \"\$RPT\" 2>/dev/null || echo 0)
                 echo \"DRC violations: \$VIOLS\"
-                if [ \"\$VIOLS\" = '0' ]; then
-                  echo 'DRC CLEAN'
-                else
-                  echo \"DRC FAIL: \$VIOLS violation(s) — see drc_klayout.xml\"
-                fi
               fi
             "
 
@@ -244,50 +183,41 @@ jobs:
             cat fpga/asic/results/synth_stats.txt >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
-          echo "### Stage 17 — Floorplan" >> $GITHUB_STEP_SUMMARY
           if [ -f fpga/asic/results/fpga_denoiser_top_floorplan.def ]; then
-            echo "DEF written: fpga_denoiser_top_floorplan.def" >> $GITHUB_STEP_SUMMARY
+            echo "### Stage 17 — Floorplan: DEF written" >> $GITHUB_STEP_SUMMARY
           else
-            echo "See floorplan.log" >> $GITHUB_STEP_SUMMARY
+            echo "### Stage 17 — Floorplan: see floorplan.log" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "### Stage 18 — Placement + CTS" >> $GITHUB_STEP_SUMMARY
           if [ -f fpga/asic/results/fpga_denoiser_top_cts.def ]; then
-            echo "DEF written: fpga_denoiser_top_cts.def" >> $GITHUB_STEP_SUMMARY
+            echo "### Stage 18 — Placement + CTS: DEF written" >> $GITHUB_STEP_SUMMARY
           else
-            echo "See place_cts.log" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "### Stage 19 — Routing" >> $GITHUB_STEP_SUMMARY
-          if [ -f fpga/asic/results/fpga_denoiser_top_routed.def ]; then
-            echo "Routed DEF written." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "See route.log" >> $GITHUB_STEP_SUMMARY
+            echo "### Stage 18 — Placement + CTS: see place_cts.log" >> $GITHUB_STEP_SUMMARY
           fi
           if [ -f fpga/asic/results/timing_report.txt ]; then
-            echo "### Stage 20 — Timing Signoff" >> $GITHUB_STEP_SUMMARY
+            echo "### Timing Signoff" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             grep -E 'WNS|TNS|clk' fpga/asic/results/timing_report.txt | head -8 >> $GITHUB_STEP_SUMMARY || \
               head -30 fpga/asic/results/timing_report.txt >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
           if [ -f fpga/asic/results/area_report.txt ]; then
-            echo "### Stage 20 — Area" >> $GITHUB_STEP_SUMMARY
+            echo "### Area" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             head -15 fpga/asic/results/area_report.txt >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
           if [ -f fpga/asic/results/power_report.txt ]; then
-            echo "### Stage 20 — Power" >> $GITHUB_STEP_SUMMARY
+            echo "### Power" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             cat fpga/asic/results/power_report.txt >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
           if [ -f fpga/asic/results/drc_klayout.xml ]; then
             VIOLS=$(grep -c '<item>' fpga/asic/results/drc_klayout.xml 2>/dev/null || echo "?")
-            echo "### Stage 20 — DRC (sky130A, KLayout)" >> $GITHUB_STEP_SUMMARY
-            echo "Violations: **$VIOLS**" >> $GITHUB_STEP_SUMMARY
+            echo "### DRC (sky130A, KLayout): **$VIOLS** violation(s)" >> $GITHUB_STEP_SUMMARY
           fi
           if [ -f fpga/asic/results/fpga_denoiser_top.gds ]; then
-            echo "### Stage 21 — GDSII" >> $GITHUB_STEP_SUMMARY
+            echo "### GDSII" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             ls -lh fpga/asic/results/fpga_denoiser_top.gds >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
