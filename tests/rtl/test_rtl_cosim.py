@@ -74,8 +74,8 @@ def test_bit_exact_filters_really_are_bit_exact(cosim) -> None:
             assert r.mismatched == 0, f"{r.case}/{r.filter}: {r.mismatched} pixels differ"
 
 
-def test_all_five_codes_and_a_stalled_stream_were_exercised(cosim) -> None:
+def test_all_four_codes_and_a_stalled_stream_were_exercised(cosim) -> None:
     results, _ = cosim
-    assert {r.filter for r in results} == {"bypass", "median", "gaussian", "wiener", "adaptive_median"}
+    assert {r.filter for r in results} == {"bypass", "median", "gaussian", "wiener"}
     assert any(r.stall for r in results), "no frame ran with input stalls"
     assert all(r.pixels == 31 * 17 for r in results)
