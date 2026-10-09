@@ -38,6 +38,9 @@ initialize_floorplan \
     -core_area "2 2 248 248" \
     -site      unithd
 
+# Populate routing track database from the tech LEF (required before place_pins)
+make_tracks
+
 # I/O pins — auto ring on met3 (H) / met4 (V)
 place_pins -hor_layers met3 -ver_layers met4
 
