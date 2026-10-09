@@ -53,6 +53,13 @@ testpaths = ["tests/python", "tests/rtl"]
 # Lets `pytest` run in a fresh checkout without `pip install -e .` first.
 pythonpath = ["src"]
 addopts = "-ra -m 'not slow'"
+filterwarnings = [
+    "ignore::DeprecationWarning:torch.ao.quantization",
+    "ignore:torch.ao.quantization is deprecated:DeprecationWarning",
+    "ignore:torch.quantize_per_tensor:UserWarning",
+    "ignore:Please use quant_min and quant_max:UserWarning",
+    "ignore:The given buffer is not writable:UserWarning",
+]
 markers = [
     "slow: marks tests as slow to run (deselect with '-m not slow', run with '-m slow')",
 ]
