@@ -1,8 +1,9 @@
 # Hardware
 
-Status: phase 1. **No board is selected, no synthesis has been run, and no
-hardware has been programmed.** Every figure below is `TBD` and stays that way
-until a tool report or a measurement exists.
+Status: place-and-route complete. **No board has been programmed** — all figures
+are from `scripts/place_and_route.py` (yosys synth_ecp5 + nextpnr-ecp5 + ecppack),
+not measurements on silicon. Fmax: **115.09 MHz** on ECP5-25k at 100 MHz target (PASS).
+Results in `results/rtl/pnr_ecp5.json`.
 
 ## Target device
 
