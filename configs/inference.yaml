@@ -12,7 +12,7 @@ image:
 # fallback below.
 confidence:
   threshold: 0.50
-  fallback: bypass        # bypass | median | gaussian | wiener
+  fallback: wiener        # bypass | median | gaussian | wiener
 
 # Noise severity (stage 4). Each noisy class measures its own quantity from the
 # noisy image alone — no reference is needed — and two cut points split it into
