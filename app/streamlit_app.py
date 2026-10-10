@@ -51,6 +51,7 @@ from denoising.dataset import synthetic_sources  # noqa: E402
 from denoising.filters import FILTER_FOR_CLASS, estimate_noise_variance  # noqa: E402
 from denoising.noise import (  # noqa: E402
     add_gaussian_noise,
+    add_rician_noise,
     add_salt_pepper_noise,
     add_speckle_noise,
 )
@@ -2034,7 +2035,7 @@ def step1(cfg, ds) -> None:
                 unsafe_allow_html=True,
             )
             st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
-            kind = st.selectbox("Add synthetic noise", ["None — keep clean", "Salt & pepper", "Gaussian", "Speckle"], index=2)
+            kind = st.selectbox("Add synthetic noise", ["None — keep clean", "Salt & pepper", "Gaussian", "Speckle", "Rician"], index=2)
             amt = None
             if kind == "Salt & pepper":
                 amt = st.slider("Fraction of pixels affected", 0.01, 0.30, 0.10, 0.01)
@@ -2042,6 +2043,8 @@ def step1(cfg, ds) -> None:
                 amt = st.slider("Sigma (normalised)", 0.01, 0.30, 0.08, 0.01)
             elif kind == "Speckle":
                 amt = st.slider("Variance (normalised)", 0.01, 0.30, 0.08, 0.01)
+            elif kind == "Rician":
+                amt = st.slider("Sigma (normalised)", 0.01, 0.30, 0.08, 0.01)
 
             st.markdown(
                 f'<div style="font-size:var(--fs-1);color:{T["text_3"]};margin:2px 0 12px;line-height:1.55;">'
@@ -2058,6 +2061,8 @@ def step1(cfg, ds) -> None:
                     noisy, truth = add_gaussian_noise(clean, 0.0, amt, seed=0), "gaussian"
                 elif kind == "Speckle":
                     noisy, truth = add_speckle_noise(clean, amt, seed=0), "speckle"
+                elif kind == "Rician":
+                    noisy, truth = add_rician_noise(clean, amt, seed=0), "rician"
                 else:
                     noisy, truth = clean, "clean"
                 ss.image, ss.reference, ss.truth = noisy, clean, truth
