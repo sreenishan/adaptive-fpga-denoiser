@@ -15,7 +15,8 @@ htmlcov/
 # Generated data and model artefacts are reproducible from the configs and
 # seeds; they are not committed.
 data/.medmnist_cache/**
-data/raw/**
+# data/raw/ is committed — 300 medical source images (CT/MRI/Ultrasound, 8.6 MB)
+# needed by the Streamlit Cloud deployment for the medical sample picker.
 data/generated/**
 data/references/**
 models/checkpoints/**
