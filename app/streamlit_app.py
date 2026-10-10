@@ -1416,12 +1416,12 @@ def samples(n: int, w: int, h: int, seed: int) -> dict[str, np.ndarray]:
 
 
 @st.cache_data(show_spinner=False)
-def medical_samples(w: int, h: int) -> dict[str, np.ndarray]:
+def medical_samples(w: int, h: int, _raw_exists: bool) -> dict[str, np.ndarray]:
+    if not _raw_exists:
+        return {}
     from denoising.config import ImageConfig
     from denoising.dataset.sources import load_sources
     raw_dir = _ROOT / "data" / "raw"
-    if not raw_dir.is_dir():
-        return {}
     srcs = load_sources(raw_dir, ImageConfig(w, h, True))
     return {s.source_id: s.image for s in srcs}
 
@@ -2036,7 +2036,7 @@ def step1(cfg, ds) -> None:
         st.markdown(
             f'<div style="font-size:var(--fs-3);font-weight:600;color:{T["text"]};margin-bottom:10px;">'
             f'Or use a sample</div>', unsafe_allow_html=True)
-        med = medical_samples(ds.image.width, ds.image.height)
+        med = medical_samples(ds.image.width, ds.image.height, (_ROOT / "data" / "raw").is_dir())
         sample_type = st.radio(
             "Sample type", ["Synthetic", "Medical (CT / MRI / Ultrasound)"],
             horizontal=True, label_visibility="collapsed",
