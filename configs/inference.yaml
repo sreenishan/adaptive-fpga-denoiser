@@ -11,7 +11,7 @@ image:
 # A low-confidence prediction is never hidden; it is reported and routed to the
 # fallback below.
 confidence:
-  threshold: 0.60
+  threshold: 0.50
   fallback: bypass        # bypass | median | gaussian | wiener
 
 # Noise severity (stage 4). Each noisy class measures its own quantity from the
