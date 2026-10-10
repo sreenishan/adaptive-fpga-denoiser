@@ -1416,6 +1416,17 @@ def samples(n: int, w: int, h: int, seed: int) -> dict[str, np.ndarray]:
 
 
 @st.cache_data(show_spinner=False)
+def medical_samples(w: int, h: int) -> dict[str, np.ndarray]:
+    from denoising.config import ImageConfig
+    from denoising.dataset.sources import load_sources
+    raw_dir = _ROOT / "data" / "raw"
+    if not raw_dir.is_dir():
+        return {}
+    srcs = load_sources(raw_dir, ImageConfig(w, h, True))
+    return {s.source_id: s.image for s in srcs}
+
+
+@st.cache_data(show_spinner=False)
 def rtl_inventory() -> list[tuple[str, int]]:
     """Actual .sv files on disk with their byte size. Empty if none."""
     d = _ROOT / "rtl"
@@ -2025,7 +2036,15 @@ def step1(cfg, ds) -> None:
         st.markdown(
             f'<div style="font-size:var(--fs-3);font-weight:600;color:{T["text"]};margin-bottom:10px;">'
             f'Or use a sample</div>', unsafe_allow_html=True)
-        pool = samples(6, ds.image.width, ds.image.height, ds.split.seed)
+        med = medical_samples(ds.image.width, ds.image.height)
+        sample_type = st.radio(
+            "Sample type", ["Synthetic", "Medical (CT / MRI / Ultrasound)"],
+            horizontal=True, label_visibility="collapsed",
+        ) if med else "Synthetic"
+        if sample_type == "Medical (CT / MRI / Ultrasound)" and med:
+            pool = med
+        else:
+            pool = samples(6, ds.image.width, ds.image.height, ds.split.seed)
         pick = st.selectbox("Sample image", list(pool), label_visibility="collapsed")
         if pick:
             prev = pool[pick]
