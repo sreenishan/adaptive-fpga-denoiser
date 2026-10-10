@@ -2025,12 +2025,42 @@ def step1(cfg, ds) -> None:
                           "Use an image at least 3 pixels on each side.", "error"),
                     unsafe_allow_html=True,
                 )
-            else:
+            elif kind == "camera":
                 ss.image, ss.reference, ss.truth = img, None, None
                 ss.source_kind = kind
-                ss.source_label = "camera frame" if kind == "camera" else up.name
+                ss.source_label = "camera frame"
                 ss.step = 2
                 st.rerun()
+            else:
+                # Uploaded file: offer optional clean reference so PSNR/SSIM can be computed.
+                ref_f = st.file_uploader(
+                    "Clean reference (optional — enables PSNR / SSIM)",
+                    type=["png", "jpg", "jpeg", "bmp", "tif", "tiff"],
+                    key="ref_uploader",
+                )
+                ref_img = None
+                if ref_f is not None:
+                    ref_img = decode_upload(ref_f.getvalue())
+                    if ref_img is None or ref_img.shape != img.shape:
+                        st.markdown(
+                            alert("Reference mismatch",
+                                  "The clean reference could not be decoded or its size differs from the "
+                                  "noisy image. Upload a reference with the same dimensions.", "warning"),
+                            unsafe_allow_html=True,
+                        )
+                        ref_img = None
+                st.markdown(
+                    f'<div style="font-size:var(--fs-1);color:{T["text_3"]};margin:4px 0 12px;line-height:1.55;">'
+                    f'{"✓ Reference loaded — PSNR and SSIM will be computed." if ref_img is not None else "No reference — quality metrics will not be available. Upload the same image <em>without</em> noise to enable them."}'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button("Continue", type="primary", use_container_width=True, key="upload_continue"):
+                    ss.image, ss.reference, ss.truth = img, ref_img, None
+                    ss.source_kind = kind
+                    ss.source_label = up.name
+                    ss.step = 2
+                    st.rerun()
 
     with right:
         st.markdown(
